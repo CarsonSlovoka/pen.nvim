@@ -12,6 +12,7 @@
 - 初始版本
 - `:PenAdd <index> [note]` 將目前位置寫入對應 `.pen` 檔
 - `:PenOpen <index>` 開啟書籤 buffer
+- `:PenOpen`（省略 index）與 `require("pen.ui").open(nil, config)` 將所有 db_path 的書籤整合成單一 buffer，方便跨組搜尋與跳轉（顯示來源 `.pen` 檔名）
 - `:PenLs` 顯示 `db_path` 列表，可直接跳轉編輯對應設定檔
 - 使用 TSV 格式儲存書籤（`note\tfile:line:col`）
 - 書籤 buffer 支援：

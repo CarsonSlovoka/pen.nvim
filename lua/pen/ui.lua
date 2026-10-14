@@ -9,7 +9,11 @@ local function get_display_line(bm)
   if #rel > 60 then
     rel = "..." .. rel:sub(-57)
   end
-  return string.format("%s:%d:%d  %s", filename, bm.line, bm.col, bm.note or "")
+  local prefix = ""
+  if bm.source then
+    prefix = string.format("[%s] ", bm.source)
+  end
+  return string.format("%s%s:%d:%d  %s", prefix, filename, bm.line, bm.col, bm.note or "")
 end
 
 local function refresh_buffer(bufnr, bookmarks, filter)
@@ -33,10 +37,14 @@ local function refresh_buffer(bufnr, bookmarks, filter)
   local win = buffer_state[bufnr].win
   if win and vim.api.nvim_win_is_valid(win) then
     local status
+    local prefix = "Pen"
+    if buffer_state[bufnr] and buffer_state[bufnr].is_all then
+      prefix = "Pen All"
+    end
     if filter and filter ~= "" then
-      status = string.format("Pen [filter: %s] (%d/%d)", filter, #filtered, #bookmarks)
+      status = string.format("%s [filter: %s] (%d/%d)", prefix, filter, #filtered, #bookmarks)
     else
-      status = string.format("Pen (%d bookmarks)", #bookmarks)
+      status = string.format("%s (%d bookmarks)", prefix, #bookmarks)
     end
     vim.api.nvim_set_option_value("statusline", status, { win = win })
   end
@@ -284,23 +292,42 @@ local function start_incremental_filter(bufnr)
   update_filter()
 end
 
---- Open the pen buffer for the given index
---- @param idx number
+--- Open the pen buffer for the given index, or all bookmarks if idx is nil
+--- @param idx number|nil
 --- @param config table
 function M.open(idx, config)
-  local path = config.db_path[idx]
-  if not path then
-    vim.notify("No path for index " .. idx, vim.log.levels.ERROR)
-    return
-  end
+  local bookmarks
+  local bufname
+  local path = nil
+  local is_all = false
 
-  local bookmarks = require("pen.bookmark").load(path)
+  if not idx then
+    -- Merge bookmarks from all configured db_path
+    bookmarks = {}
+    for _, p in ipairs(config.db_path or {}) do
+      local bms = require("pen.bookmark").load(p)
+      local src = vim.fn.fnamemodify(p, ":t")
+      for _, bm in ipairs(bms) do
+        bm.source = src
+        table.insert(bookmarks, bm)
+      end
+    end
+    bufname = "pen://all"
+    is_all = true
+  else
+    path = config.db_path[idx]
+    if not path then
+      vim.notify("No path for index " .. tostring(idx), vim.log.levels.ERROR)
+      return
+    end
+    bookmarks = require("pen.bookmark").load(path)
+    bufname = vim.fn.fnamemodify(path, ":t")
+  end
 
   -- Create a new scratch buffer
   local bufnr = vim.api.nvim_create_buf(false, true)
-  -- Set buffer name to the .pen filename so it doesn't show as [No Name]
-  local filename = vim.fn.fnamemodify(path, ":t")
-  pcall(vim.api.nvim_buf_set_name, bufnr, filename)
+  -- Set buffer name to the .pen filename (or pen://all) so it doesn't show as [No Name]
+  pcall(vim.api.nvim_buf_set_name, bufnr, bufname)
   vim.bo[bufnr].filetype = "pen"
   vim.bo[bufnr].buftype = "nofile"
   vim.bo[bufnr].bufhidden = "wipe"
@@ -313,6 +340,7 @@ function M.open(idx, config)
     filter = "",
     path = path,
     idx = idx,
+    is_all = is_all,
   }
 
   refresh_buffer(bufnr, bookmarks, "")
@@ -323,8 +351,9 @@ function M.open(idx, config)
   vim.bo[bufnr].modifiable = false
   buffer_state[bufnr].win = win
 
-  -- Initial statusline
-  local status = string.format("Pen (%d bookmarks)", #bookmarks)
+  -- Initial statusline (refresh_buffer already set it, but keep consistent)
+  local prefix = is_all and "Pen All" or "Pen"
+  local status = string.format("%s (%d bookmarks)", prefix, #bookmarks)
   vim.api.nvim_set_option_value("statusline", status, { win = win })
 
   -- Keymaps (buffer local)
@@ -370,7 +399,11 @@ function M.open(idx, config)
     end,
   })
 
-  vim.notify("Opened pen bookmarks: " .. vim.fn.fnamemodify(path, ":t"), vim.log.levels.INFO)
+  if is_all then
+    vim.notify(string.format("Opened all pen bookmarks (%d)", #bookmarks), vim.log.levels.INFO)
+  else
+    vim.notify("Opened pen bookmarks: " .. vim.fn.fnamemodify(path, ":t"), vim.log.levels.INFO)
+  end
 end
 
 --- List all configured db_path files and allow jumping to edit them

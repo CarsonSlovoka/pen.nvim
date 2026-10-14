@@ -37,10 +37,13 @@ require("pen").setup({
 :PenAdd 1 note text here     " 寫入 bookmark_01.pen 並附上註解
 :PenAdd 9                    " 寫入 bookmark_09.pen，註解預設為目前檔名
 :PenOpen 1                   " 在目前 window 開啟第 1 組書籤 buffer（不再 split）
+:PenOpen                     " 省略索引：將所有 db_path 的書籤整合成一個 buffer，方便跨組搜尋
 :PenLs                       " 列出所有 db_path，<CR> 跳轉編輯該設定檔
 ```
 
 ### 程式化呼叫（keymap 範例）
+
+`require("pen.ui").open(idx, config)`：`idx` 為數字時開啟該組；傳 `nil` 時會將所有 `db_path` 的書籤整合成一個列表供篩選與跳轉。
 
 `pen.bookmark.add` 的第二個參數 `note` 可以是 `string`、`nil`，或 **function**。  
 若傳入 function，會被呼叫並使用其回傳值作為註解（適合互動式輸入）：

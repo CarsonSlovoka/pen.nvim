@@ -54,6 +54,11 @@ function M.setup(opts)
   })
 
   vim.api.nvim_create_user_command("PenOpen", function(cmd_opts)
+    -- Omit index to open merged view of all db_path
+    if not cmd_opts.args or cmd_opts.args == "" then
+      require("pen.ui").open(nil, config)
+      return
+    end
     local idx = tonumber(cmd_opts.args)
     if not idx or idx < 1 or idx > #config.db_path then
       vim.notify("Invalid bookmark index: " .. tostring(cmd_opts.args), vim.log.levels.ERROR)
@@ -61,8 +66,8 @@ function M.setup(opts)
     end
     require("pen.ui").open(idx, config)
   end, {
-    nargs = 1,
-    desc = "Open a pen bookmark buffer",
+    nargs = "?",
+    desc = "Open a pen bookmark buffer (omit index to merge all)",
     complete = function(arglead, cmdline, cursorpos)
       local indices = {}
       for i = 1, #config.db_path do
