@@ -1,0 +1,231 @@
+local M = {}
+
+-- Store state per buffer
+local buffer_state = {}
+
+local function get_display_line(bm)
+  local filename = vim.fn.fnamemodify(bm.file, ":t")
+  local rel = vim.fn.fnamemodify(bm.file, ":.")
+  if #rel > 60 then
+    rel = "..." .. rel:sub(-57)
+  end
+  return string.format("%s:%d:%d  %s", filename, bm.line, bm.col, bm.note or "")
+end
+
+local function refresh_buffer(bufnr, bookmarks, filter)
+  local lines = {}
+  local filtered = {}
+  for _, bm in ipairs(bookmarks) do
+    local line = get_display_line(bm)
+    if not filter or filter == "" or line:lower():find(filter:lower(), 1, true) then
+      table.insert(lines, line)
+      table.insert(filtered, bm)
+    end
+  end
+  -- Temporarily make modifiable to update lines
+  local was_modifiable = vim.bo[bufnr].modifiable
+  vim.bo[bufnr].modifiable = true
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modifiable = was_modifiable
+  buffer_state[bufnr].filtered = filtered
+  buffer_state[bufnr].filter = filter or ""
+  -- Update statusline on the window if we have one
+  local win = buffer_state[bufnr].win
+  if win and vim.api.nvim_win_is_valid(win) then
+    local status
+    if filter and filter ~= "" then
+      status = string.format("Pen [filter: %s] (%d/%d)", filter, #filtered, #bookmarks)
+    else
+      status = string.format("Pen (%d bookmarks)", #bookmarks)
+    end
+    vim.api.nvim_set_option_value("statusline", status, { win = win })
+  end
+end
+
+--- Jump to the bookmark on the current line
+local function jump_to_bookmark(bufnr)
+  local state = buffer_state[bufnr]
+  if not state then return end
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local bm = state.filtered[row]
+  if not bm then return end
+
+  -- Close the pen buffer first? Or switch. We'll switch to the file.
+  local current_win = vim.api.nvim_get_current_win()
+  -- Try to find existing window with the file, or open it
+  local target_win = nil
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local b = vim.api.nvim_win_get_buf(win)
+    if vim.api.nvim_buf_get_name(b) == bm.file then
+      target_win = win
+      break
+    end
+  end
+
+  if target_win then
+    vim.api.nvim_set_current_win(target_win)
+  else
+    vim.cmd("edit " .. vim.fn.fnameescape(bm.file))
+  end
+
+  vim.api.nvim_win_set_cursor(0, { bm.line, math.max(0, bm.col - 1) })
+  vim.cmd("normal! zz")
+  -- Optionally close the pen window if it was a split, but for now leave it
+end
+
+--- Toggle preview of the current bookmark
+local function toggle_preview(bufnr)
+  local state = buffer_state[bufnr]
+  if not state then return end
+
+  -- Close existing preview if any
+  if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+    vim.api.nvim_win_close(state.preview_win, true)
+    state.preview_win = nil
+    state.preview_buf = nil
+    return
+  end
+
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local bm = state.filtered[row]
+  if not bm or not bm.file or vim.fn.filereadable(bm.file) == 0 then
+    vim.notify("Cannot preview: file not readable", vim.log.levels.WARN)
+    return
+  end
+
+  -- Read context around the line (5 before, 5 after)
+  local lines = vim.fn.readfile(bm.file)
+  local start_line = math.max(1, bm.line - 5)
+  local end_line = math.min(#lines, bm.line + 5)
+  local preview_lines = {}
+  for i = start_line, end_line do
+    table.insert(preview_lines, string.format("%4d | %s", i, lines[i] or ""))
+  end
+
+  local preview_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, preview_lines)
+  vim.bo[preview_buf].filetype = "pen_preview"
+  vim.bo[preview_buf].modifiable = false
+  vim.bo[preview_buf].buftype = "nofile"
+
+  -- Highlight the target line (relative)
+  local highlight_line = bm.line - start_line -- 0-based in buffer? Wait, nvim_buf_add_highlight is 0-based
+  vim.api.nvim_buf_add_highlight(preview_buf, -1, "Search", highlight_line, 0, -1)
+
+  local width = 80
+  local height = math.min(15, #preview_lines + 2)
+  local row_pos = math.floor((vim.o.lines - height) / 2)
+  local col_pos = math.floor((vim.o.columns - width) / 2)
+
+  local preview_win = vim.api.nvim_open_win(preview_buf, false, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row_pos,
+    col = col_pos,
+    style = "minimal",
+    border = "rounded",
+    title = "Preview: " .. vim.fn.fnamemodify(bm.file, ":t") .. ":" .. bm.line,
+    title_pos = "center",
+  })
+
+  state.preview_win = preview_win
+  state.preview_buf = preview_buf
+
+  -- Auto-close preview when leaving or on next action? For now, toggle handles it.
+  -- Also close on buffer leave
+  vim.api.nvim_create_autocmd("BufLeave", {
+    buffer = bufnr,
+    once = true,
+    callback = function()
+      if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+        vim.api.nvim_win_close(state.preview_win, true)
+      end
+    end,
+  })
+end
+
+--- Filter the bookmarks
+local function apply_filter(bufnr)
+  local state = buffer_state[bufnr]
+  if not state then return end
+  vim.ui.input({ prompt = "Filter: ", default = state.filter or "" }, function(input)
+    if input == nil then return end -- cancelled
+    refresh_buffer(bufnr, state.bookmarks, input)
+  end)
+end
+
+--- Open the pen buffer for the given index
+--- @param idx number
+--- @param config table
+function M.open(idx, config)
+  local path = config.db_path[idx]
+  if not path then
+    vim.notify("No path for index " .. idx, vim.log.levels.ERROR)
+    return
+  end
+
+  local bookmarks = require("pen.bookmark").load(path)
+
+  -- Create a new scratch buffer
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  vim.bo[bufnr].filetype = "pen"
+  vim.bo[bufnr].buftype = "nofile"
+  vim.bo[bufnr].bufhidden = "wipe"
+  vim.bo[bufnr].swapfile = false
+  -- Leave modifiable true initially for population
+
+  buffer_state[bufnr] = {
+    bookmarks = bookmarks,
+    filtered = bookmarks,
+    filter = "",
+    path = path,
+    idx = idx,
+  }
+
+  refresh_buffer(bufnr, bookmarks, "")
+
+  -- Open in a split
+  vim.cmd("split")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_set_current_buf(bufnr)
+  vim.bo[bufnr].modifiable = false
+  buffer_state[bufnr].win = win
+
+  -- Initial statusline
+  local status = string.format("Pen (%d bookmarks)", #bookmarks)
+  vim.api.nvim_set_option_value("statusline", status, { win = win })
+
+  -- Keymaps (buffer local)
+  local opts = { buffer = bufnr, noremap = true, silent = true }
+  vim.keymap.set("n", "<CR>", function() jump_to_bookmark(bufnr) end, opts)
+  vim.keymap.set("n", "p", function() toggle_preview(bufnr) end, opts)
+  vim.keymap.set("n", "/", function() apply_filter(bufnr) end, opts)
+  vim.keymap.set("n", "q", function()
+    -- close preview if open
+    local state = buffer_state[bufnr]
+    if state and state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+      vim.api.nvim_win_close(state.preview_win, true)
+    end
+    vim.cmd("close")
+  end, opts)
+  vim.keymap.set("n", "<Esc>", function()
+    -- clear filter if any
+    local state = buffer_state[bufnr]
+    if state and state.filter ~= "" then
+      refresh_buffer(bufnr, state.bookmarks, "")
+    end
+  end, opts)
+
+  -- Cleanup on buf delete
+  vim.api.nvim_create_autocmd("BufDelete", {
+    buffer = bufnr,
+    callback = function()
+      buffer_state[bufnr] = nil
+    end,
+  })
+
+  vim.notify("Opened pen bookmarks: " .. vim.fn.fnamemodify(path, ":t"), vim.log.levels.INFO)
+end
+
+return M
