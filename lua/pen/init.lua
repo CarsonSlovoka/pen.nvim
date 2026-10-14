@@ -72,6 +72,13 @@ function M.setup(opts)
     end,
   })
 
+  vim.api.nvim_create_user_command("PenLs", function()
+    require("pen.ui").list(config)
+  end, {
+    nargs = 0,
+    desc = "List configured db_path files and jump to edit them",
+  })
+
   -- Filetype detection for .pen files
   vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
     pattern = "*.pen",

@@ -5,7 +5,7 @@
 ## 功能
 
 - 將目前游標位置與註解寫入指定的 `.pen` 檔案
-- 提供 `:PenAdd` 與 `:PenOpen` 指令
+- 提供 `:PenAdd`、`:PenOpen` 與 `:PenLs` 指令
 - 在書籤 buffer 中：
   - `/` 篩選只顯示包含關鍵字的項目
   - `<CR>` 跳轉到該位置
@@ -36,7 +36,8 @@ require("pen").setup({
 ```vim
 :PenAdd 1 note text here     " 寫入 bookmark_01.pen 並附上註解
 :PenAdd 9                    " 寫入 bookmark_09.pen，註解預設為目前檔名
-:PenOpen 1                   " 開啟第 1 組書籤 buffer
+:PenOpen 1                   " 開啟第 1 組書籤 buffer（buffer 名稱為對應檔名）
+:PenLs                       " 列出所有 db_path，<CR> 跳轉編輯該設定檔
 ```
 
 在 pen buffer 中的按鍵：
@@ -48,6 +49,14 @@ require("pen").setup({
 | `/`     | 篩選列表                 |
 | `<Esc>` | 清除篩選                 |
 | `q`     | 關閉 buffer              |
+
+在 PenLs buffer 中：
+
+| 按鍵    | 動作                     |
+|---------|--------------------------|
+| `<CR>`  | 開啟並編輯對應 `.pen` 檔 |
+| `q`     | 關閉 buffer              |
+| `<Esc>` | 關閉 buffer              |
 
 ## 設定
 
@@ -65,7 +74,7 @@ require("pen").setup({
 
 ## 版本
 
-目前版本：**0.0.0**
+目前版本：**Unreleased**
 
 ## 授權
 

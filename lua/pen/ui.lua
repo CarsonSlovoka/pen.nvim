@@ -169,6 +169,9 @@ function M.open(idx, config)
 
   -- Create a new scratch buffer
   local bufnr = vim.api.nvim_create_buf(false, true)
+  -- Set buffer name to the .pen filename so it doesn't show as [No Name]
+  local filename = vim.fn.fnamemodify(path, ":t")
+  pcall(vim.api.nvim_buf_set_name, bufnr, filename)
   vim.bo[bufnr].filetype = "pen"
   vim.bo[bufnr].buftype = "nofile"
   vim.bo[bufnr].bufhidden = "wipe"
@@ -226,6 +229,58 @@ function M.open(idx, config)
   })
 
   vim.notify("Opened pen bookmarks: " .. vim.fn.fnamemodify(path, ":t"), vim.log.levels.INFO)
+end
+
+--- List all configured db_path files and allow jumping to edit them
+--- @param config table
+function M.list(config)
+  local paths = config.db_path or {}
+  if #paths == 0 then
+    vim.notify("No db_path configured", vim.log.levels.WARN)
+    return
+  end
+
+  local bufnr = vim.api.nvim_create_buf(false, true)
+  pcall(vim.api.nvim_buf_set_name, bufnr, "pen://list")
+  vim.bo[bufnr].filetype = "pen"
+  vim.bo[bufnr].buftype = "nofile"
+  vim.bo[bufnr].bufhidden = "wipe"
+  vim.bo[bufnr].swapfile = false
+  vim.bo[bufnr].modifiable = true
+
+  local lines = {}
+  for i, path in ipairs(paths) do
+    local display = string.format("%2d  %s", i, path)
+    table.insert(lines, display)
+  end
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+  vim.bo[bufnr].modifiable = false
+
+  -- Open in a split
+  vim.cmd("split")
+  local win = vim.api.nvim_get_current_win()
+  vim.api.nvim_set_current_buf(bufnr)
+
+  local status = string.format("PenLs (%d files)", #paths)
+  vim.api.nvim_set_option_value("statusline", status, { win = win })
+
+  -- Keymaps
+  local opts = { buffer = bufnr, noremap = true, silent = true }
+  vim.keymap.set("n", "<CR>", function()
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local path = paths[row]
+    if path then
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+    end
+  end, opts)
+  vim.keymap.set("n", "q", function()
+    vim.cmd("close")
+  end, opts)
+  vim.keymap.set("n", "<Esc>", function()
+    vim.cmd("close")
+  end, opts)
+
+  vim.notify("Listed " .. #paths .. " pen files. <CR> to edit, q to close", vim.log.levels.INFO)
 end
 
 return M
