@@ -15,7 +15,7 @@
 - `:PenLs` 顯示 `db_path` 列表，可直接跳轉編輯對應設定檔
 - 使用 TSV 格式儲存書籤（`note\tfile:line:col`）
 - 書籤 buffer 支援：
-  - `/` 篩選只保留包含關鍵字的項目
+  - `/` 開啟即時篩選（輸入時立即匹配）
   - `<CR>` 跳轉
   - `p` 切換浮動預覽
   - `q` 關閉、`<Esc>` 清除篩選
@@ -27,3 +27,10 @@
 
 - `pen.bookmark.add` 的 `note` 參數支援傳入 `function`，會被呼叫以取得註解內容（方便 keymap 互動輸入）
 - `pen.ui.open` 改為在目前 window 開啟，不再執行 `split`；`q` 改為刪除 scratch buffer 並回到前一個 buffer
+- `/` 篩選改為即時過濾（輸入時立即更新列表，不需等到按下 Enter）
+- 跳轉書籤時會將行號與欄位限制在有效範圍內，避免 `Invalid cursor line: out of range` 錯誤
+
+### Fixed
+
+- 修復書籤行號超出檔案範圍時跳轉失敗的問題
+

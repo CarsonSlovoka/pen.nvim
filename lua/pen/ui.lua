@@ -50,6 +50,11 @@ local function jump_to_bookmark(bufnr)
   local bm = state.filtered[row]
   if not bm then return end
 
+  if not bm.file or vim.fn.filereadable(bm.file) == 0 then
+    vim.notify("Cannot jump: file not readable", vim.log.levels.WARN)
+    return
+  end
+
   -- Close the pen buffer first? Or switch. We'll switch to the file.
   local current_win = vim.api.nvim_get_current_win()
   -- Try to find existing window with the file, or open it
@@ -68,7 +73,26 @@ local function jump_to_bookmark(bufnr)
     vim.cmd("edit " .. vim.fn.fnameescape(bm.file))
   end
 
-  vim.api.nvim_win_set_cursor(0, { bm.line, math.max(0, bm.col - 1) })
+  -- Clamp line/col to valid range to avoid "Invalid cursor line: out of range"
+  local target_buf = vim.api.nvim_get_current_buf()
+  local line_count = vim.api.nvim_buf_line_count(target_buf)
+  if line_count < 1 then
+    vim.notify("Target buffer has no lines", vim.log.levels.WARN)
+    return
+  end
+  local line = math.min(math.max(1, bm.line or 1), line_count)
+  local col = math.max(0, (bm.col or 1) - 1)
+  local line_text = vim.api.nvim_buf_get_lines(target_buf, line - 1, line, false)[1] or ""
+  col = math.min(col, #line_text)
+
+  local ok, err = pcall(vim.api.nvim_win_set_cursor, 0, { line, col })
+  if not ok then
+    vim.notify("Failed to set cursor: " .. tostring(err), vim.log.levels.ERROR)
+    return
+  end
+  if line ~= bm.line then
+    vim.notify(string.format("Bookmark line %d out of range (file has %d lines), jumped to line %d", bm.line, line_count, line), vim.log.levels.WARN)
+  end
   vim.cmd("normal! zz")
   -- Optionally close the pen window if it was a split, but for now leave it
 end
@@ -145,14 +169,91 @@ local function toggle_preview(bufnr)
   })
 end
 
---- Filter the bookmarks
-local function apply_filter(bufnr)
+--- Start incremental filter (real-time as you type)
+local function start_incremental_filter(bufnr)
   local state = buffer_state[bufnr]
   if not state then return end
-  vim.ui.input({ prompt = "Filter: ", default = state.filter or "" }, function(input)
-    if input == nil then return end -- cancelled
+
+  -- Close existing filter prompt if any
+  if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
+    vim.api.nvim_win_close(state.filter_win, true)
+    state.filter_win = nil
+  end
+
+  local filter_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[filter_buf].buftype = "nofile"
+  vim.bo[filter_buf].bufhidden = "wipe"
+  vim.bo[filter_buf].swapfile = false
+  vim.bo[filter_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(filter_buf, 0, -1, false, { state.filter or "" })
+
+  local width = math.min(60, vim.o.columns - 4)
+  local height = 1
+  local row = vim.o.lines - 4
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local filter_win = vim.api.nvim_open_win(filter_buf, true, {
+    relative = "editor",
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = "minimal",
+    border = "rounded",
+    title = "Filter  (type to filter live, <CR> confirm, <Esc> clear)",
+    title_pos = "center",
+  })
+
+  state.filter_win = filter_win
+  state.filter_buf = filter_buf
+
+  -- Move cursor to end and enter insert
+  vim.api.nvim_win_set_cursor(filter_win, { 1, #(state.filter or "") })
+  vim.cmd("startinsert!")
+
+  local augroup = vim.api.nvim_create_augroup("PenFilter_" .. bufnr, { clear = true })
+
+  local function update_filter()
+    if not vim.api.nvim_buf_is_valid(filter_buf) then return end
+    local input = vim.api.nvim_buf_get_lines(filter_buf, 0, 1, false)[1] or ""
     refresh_buffer(bufnr, state.bookmarks, input)
-  end)
+    -- Keep list cursor on first match if any
+    local list_win = state.win
+    if list_win and vim.api.nvim_win_is_valid(list_win) and #(state.filtered or {}) > 0 then
+      pcall(vim.api.nvim_win_set_cursor, list_win, { 1, 0 })
+    end
+  end
+
+  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
+    group = augroup,
+    buffer = filter_buf,
+    callback = update_filter,
+  })
+
+  local function close_filter(keep)
+    if vim.api.nvim_win_is_valid(filter_win) then
+      vim.api.nvim_win_close(filter_win, true)
+    end
+    pcall(vim.api.nvim_del_augroup_by_id, augroup)
+    state.filter_win = nil
+    state.filter_buf = nil
+    if not keep then
+      refresh_buffer(bufnr, state.bookmarks, "")
+    end
+    -- Return focus to the list window
+    if state.win and vim.api.nvim_win_is_valid(state.win) then
+      vim.api.nvim_set_current_win(state.win)
+    end
+    vim.cmd("stopinsert")
+  end
+
+  local fopts = { buffer = filter_buf, noremap = true, silent = true, nowait = true }
+  vim.keymap.set({ "i", "n" }, "<CR>", function() close_filter(true) end, fopts)
+  vim.keymap.set({ "i", "n" }, "<Esc>", function() close_filter(false) end, fopts)
+  vim.keymap.set("n", "q", function() close_filter(true) end, fopts)
+
+  -- Initial update in case default is non-empty
+  update_filter()
 end
 
 --- Open the pen buffer for the given index
@@ -202,12 +303,16 @@ function M.open(idx, config)
   local opts = { buffer = bufnr, noremap = true, silent = true }
   vim.keymap.set("n", "<CR>", function() jump_to_bookmark(bufnr) end, opts)
   vim.keymap.set("n", "p", function() toggle_preview(bufnr) end, opts)
-  vim.keymap.set("n", "/", function() apply_filter(bufnr) end, opts)
+  vim.keymap.set("n", "/", function() start_incremental_filter(bufnr) end, opts)
   vim.keymap.set("n", "q", function()
     -- close preview if open
     local state = buffer_state[bufnr]
     if state and state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
       vim.api.nvim_win_close(state.preview_win, true)
+    end
+    -- close filter prompt if open
+    if state and state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
+      vim.api.nvim_win_close(state.filter_win, true)
     end
     -- Delete the scratch buffer (switches back to previous buffer)
     vim.api.nvim_buf_delete(bufnr, { force = true })
@@ -224,6 +329,15 @@ function M.open(idx, config)
   vim.api.nvim_create_autocmd("BufDelete", {
     buffer = bufnr,
     callback = function()
+      local state = buffer_state[bufnr]
+      if state then
+        if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+          vim.api.nvim_win_close(state.preview_win, true)
+        end
+        if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
+          vim.api.nvim_win_close(state.filter_win, true)
+        end
+      end
       buffer_state[bufnr] = nil
     end,
   })
