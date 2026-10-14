@@ -61,6 +61,50 @@ function M.save(path, bookmarks)
   vim.fn.writefile(lines, path)
 end
 
+--- Resolve the best location to bookmark from the current buffer.
+--- For oil.nvim buffers, prefer the real path of the entry under the cursor.
+--- @return string|nil file, number line, number col
+local function resolve_current_location()
+  local bufname = vim.api.nvim_buf_get_name(0)
+  local ft = vim.bo.filetype
+
+  -- Special handling for oil.nvim
+  if ft == "oil" or bufname:match("^oil://") then
+    local ok, oil = pcall(require, "oil")
+    if ok and oil.get_cursor_entry and oil.get_current_dir then
+      local entry = oil.get_cursor_entry()
+      local dir = oil.get_current_dir()
+      if entry and dir then
+        local name = entry.name or ""
+        if entry.type == "directory" then
+          -- Ensure trailing slash for directories
+          if not name:match("/$") then
+            name = name .. "/"
+          end
+        end
+        local real_path = dir .. name
+        -- For files, store the real filesystem path so jump opens the file directly.
+        -- For directories, store an oil:// URL so jump reopens oil on that directory.
+        if entry.type == "file" then
+          return real_path, 1, 1
+        else
+          -- oil:// + absolute path (oil expects the protocol form)
+          local oil_url = "oil://" .. real_path
+          return oil_url, 1, 1
+        end
+      end
+    end
+    -- Fallback: still record the oil buffer itself if oil API failed
+  end
+
+  -- Normal buffer
+  local file = vim.fn.expand("%:p")
+  if file == "" then
+    return nil
+  end
+  return file, vim.fn.line("."), vim.fn.col(".")
+end
+
 --- Add current cursor position to the specified bookmark file
 --- @param idx number
 --- @param note string|fun():string|nil
@@ -72,14 +116,11 @@ function M.add(idx, note, config)
     return
   end
 
-  local file = vim.fn.expand("%:p")
-  if file == "" then
+  local file, line, col = resolve_current_location()
+  if not file then
     vim.notify("No file associated with current buffer", vim.log.levels.WARN)
     return
   end
-
-  local line = vim.fn.line(".")
-  local col = vim.fn.col(".")
 
   -- Support note as a function (e.g. for interactive input in keymaps)
   if type(note) == "function" then

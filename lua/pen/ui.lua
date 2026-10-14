@@ -50,7 +50,14 @@ local function jump_to_bookmark(bufnr)
   local bm = state.filtered[row]
   if not bm then return end
 
-  if not bm.file or vim.fn.filereadable(bm.file) == 0 then
+  if not bm.file then
+    vim.notify("Cannot jump: missing file", vim.log.levels.WARN)
+    return
+  end
+
+  -- oil:// and other scheme URLs are not regular files; allow them
+  local is_scheme = bm.file:match("^%w+://")
+  if not is_scheme and vim.fn.filereadable(bm.file) == 0 then
     vim.notify("Cannot jump: file not readable", vim.log.levels.WARN)
     return
   end
@@ -70,7 +77,17 @@ local function jump_to_bookmark(bufnr)
   if target_win then
     vim.api.nvim_set_current_win(target_win)
   else
-    vim.cmd("edit " .. vim.fn.fnameescape(bm.file))
+    -- Prefer oil.open for oil:// URLs when available
+    if bm.file:match("^oil://") then
+      local ok, oil = pcall(require, "oil")
+      if ok and oil.open then
+        oil.open(bm.file)
+      else
+        vim.cmd("edit " .. vim.fn.fnameescape(bm.file))
+      end
+    else
+      vim.cmd("edit " .. vim.fn.fnameescape(bm.file))
+    end
   end
 
   -- Clamp line/col to valid range to avoid "Invalid cursor line: out of range"
@@ -112,7 +129,18 @@ local function toggle_preview(bufnr)
 
   local row = vim.api.nvim_win_get_cursor(0)[1]
   local bm = state.filtered[row]
-  if not bm or not bm.file or vim.fn.filereadable(bm.file) == 0 then
+  if not bm or not bm.file then
+    vim.notify("Cannot preview: missing file", vim.log.levels.WARN)
+    return
+  end
+
+  -- oil:// and other scheme URLs cannot be previewed with readfile
+  if bm.file:match("^%w+://") then
+    vim.notify("Preview not available for " .. bm.file:match("^(%w+://)"), vim.log.levels.WARN)
+    return
+  end
+
+  if vim.fn.filereadable(bm.file) == 0 then
     vim.notify("Cannot preview: file not readable", vim.log.levels.WARN)
     return
   end

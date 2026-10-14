@@ -29,6 +29,8 @@
 - `pen.ui.open` 改為在目前 window 開啟，不再執行 `split`；`q` 改為刪除 scratch buffer 並回到前一個 buffer
 - `/` 篩選改為即時過濾（輸入時立即更新列表，不需等到按下 Enter）
 - 跳轉書籤時會將行號與欄位限制在有效範圍內，避免 `Invalid cursor line: out of range` 錯誤
+- 在 oil.nvim buffer 加入書籤時，改為記錄游標下的真實檔案／目錄路徑（而非 `oil://` buffer 本身）
+- 支援跳轉到 `oil://` 等特殊路徑（不再被 filereadable 檢查擋住）
 
 ### Fixed
 
