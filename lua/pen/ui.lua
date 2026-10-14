@@ -88,7 +88,7 @@ local function get_column_value(bm, col_config)
   elseif field == "col" then
     return tostring(bm.col or "")
   elseif field == "source" then
-    return bm.source or ""
+    return bm.source or nil
   elseif field == "loc" then
     return string.format("%d:%d", bm.line or 0, bm.col or 0)
   else
@@ -113,8 +113,10 @@ local function get_display_line(bm, config)
   local parts = {}
   for _, col in ipairs(columns) do
     local val = get_column_value(bm, col)
-    local padded = pad_display(val, col.width, col.align or "left")
-    table.insert(parts, padded)
+    if val ~= nil then
+      local padded = pad_display(val, col.width, col.align or "left")
+      table.insert(parts, padded)
+    end
   end
   return table.concat(parts, sep)
 end
@@ -222,7 +224,7 @@ local function jump_to_bookmark(bufnr)
   end
   if line ~= bm.line then
     vim.notify(
-    string.format("Bookmark line %d out of range (file has %d lines), jumped to line %d", bm.line, line_count, line),
+      string.format("Bookmark line %d out of range (file has %d lines), jumped to line %d", bm.line, line_count, line),
       vim.log.levels.WARN)
   end
   vim.cmd("normal! zz")

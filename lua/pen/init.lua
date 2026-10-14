@@ -4,11 +4,12 @@ local config = {
   db_path = {},
   display = {
     columns = {
-      { field = "note", width = 40 },
-      { field = "file", width = 15, path = ":t" },
-      { field = "file", width = 60, path = "relative" }, -- absolute (:p), basename (:t), relative (:.)
-      { field = "line", width = 6,  align = "right" },
-      { field = "col",  width = 4,  align = "right" },
+      { field = "source", width = 16 }, -- 僅在 :PenOpen（無 index）時有值
+      { field = "note",   width = 40 },
+      { field = "file",   width = 15, path = ":t" },
+      { field = "file",   width = 60, path = "relative" }, -- absolute (:p), basename (:t), relative (:.)
+      { field = "line",   width = 6,  align = "right" },
+      { field = "col",    width = 4,  align = "right" },
     },
     separator = "  ",
   },
