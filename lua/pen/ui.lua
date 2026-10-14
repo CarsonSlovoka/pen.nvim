@@ -145,18 +145,65 @@ local function get_display_line(bm, config)
   return table.concat(parts, sep)
 end
 
+--- Parse a filter string into scope and query.
+--- Default scope is "note". Prefixes:
+---   f: or p:  → path only
+---   a: or *:  → all displayed fields
+--- @param filter string|nil
+--- @return string scope  "note"|"path"|"all"
+--- @return string query
+local function parse_filter(filter)
+  if not filter or filter == "" then
+    return "note", ""
+  end
+  local prefix, rest = filter:match("^([fFaApP%*%*]):(.*)$")
+  if prefix then
+    local p = prefix:lower()
+    if p == "f" or p == "p" then
+      return "path", rest
+    elseif p == "a" or p == "*" then
+      return "all", rest
+    end
+  end
+  return "note", filter
+end
+
+--- Check whether a bookmark matches the given scope and query (plain substring, case-insensitive).
+--- @param bm Bookmark
+--- @param scope string
+--- @param query string
+--- @param config table|nil
+--- @return boolean
+local function bookmark_matches(bm, scope, query, config)
+  if not query or query == "" then
+    return true
+  end
+  local q = query:lower()
+  if scope == "path" then
+    return (bm.file or ""):lower():find(q, 1, true) ~= nil
+  elseif scope == "all" then
+    local line = get_display_line(bm, config)
+    return line:lower():find(q, 1, true) ~= nil
+  else
+    -- default: note only
+    return (bm.note or ""):lower():find(q, 1, true) ~= nil
+  end
+end
+
 --- Refresh the bookmark buffer with an optional filter string.
+--- Filter supports prefixes: (none) = note, f:/p: = path, a:/*: = all fields.
 --- @param bufnr number
 --- @param bookmarks Bookmark[]
 --- @param filter string|nil
 local function refresh_buffer(bufnr, bookmarks, filter)
   local state = buffer_state[bufnr]
   local config = state and state.config or {}
+  local scope, query = parse_filter(filter)
   local lines = {}
   local filtered = {}
   for _, bm in ipairs(bookmarks) do
-    local line = get_display_line(bm, config)
-    if not filter or filter == "" or line:lower():find(filter:lower(), 1, true) then
+    if bookmark_matches(bm, scope, query, config) then
+      local line = get_display_line(bm, config)
       table.insert(lines, line)
       table.insert(filtered, bm)
     end
@@ -168,6 +215,8 @@ local function refresh_buffer(bufnr, bookmarks, filter)
   vim.bo[bufnr].modifiable = was_modifiable
   buffer_state[bufnr].filtered = filtered
   buffer_state[bufnr].filter = filter or ""
+  buffer_state[bufnr].filter_scope = scope
+  buffer_state[bufnr].filter_query = query
   -- Update statusline on the window if we have one
   local win = buffer_state[bufnr].win
   if win and vim.api.nvim_win_is_valid(win) then
@@ -177,7 +226,8 @@ local function refresh_buffer(bufnr, bookmarks, filter)
       prefix = "Pen All"
     end
     if filter and filter ~= "" then
-      status = string.format("%s [filter: %s] (%d/%d)", prefix, filter, #filtered, #bookmarks)
+      local scope_label = ({ note = "note", path = "path", all = "all" })[scope] or scope
+      status = string.format("%s [%s: %s] (%d/%d)", prefix, scope_label, query, #filtered, #bookmarks)
     else
       status = string.format("%s (%d bookmarks)", prefix, #bookmarks)
     end
@@ -377,7 +427,7 @@ local function start_incremental_filter(bufnr)
     col = col,
     style = "minimal",
     border = "rounded",
-    title = "Filter  (type to filter live, <CR> confirm, <Esc> clear)",
+    title = "Filter  (note | f:/p: path | a:/*: all | <CR> ok | <Esc> clear)",
     title_pos = "center",
   })
 
