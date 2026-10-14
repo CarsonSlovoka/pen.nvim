@@ -1,9 +1,14 @@
+--- pen.nvim UI module
+--- Handles the bookmark list buffer, filtering, preview, and jumping.
 local M = {}
 
 -- Store state per buffer
 local buffer_state = {}
 
--- Truncate string to a given display width, appending "..." if needed
+--- Truncate a string to a given display width, appending "..." if needed.
+--- @param str string|any
+--- @param max_width number|nil
+--- @return string
 local function truncate_to_display_width(str, max_width)
   if not max_width or max_width <= 0 then
     return str
@@ -34,7 +39,11 @@ local function truncate_to_display_width(str, max_width)
   return best .. ellipsis
 end
 
--- Pad a string to the given display width (left or right align)
+--- Pad a string to the given display width (left or right align).
+--- @param str string|any
+--- @param width number|nil
+--- @param align string|nil "left" or "right"
+--- @return string
 local function pad_display(str, width, align)
   if not width or width <= 0 then
     return tostring(str or "")
@@ -54,7 +63,11 @@ local function pad_display(str, width, align)
   end
 end
 
--- Extract the display value for one column from a bookmark
+--- Extract the display value for one column from a bookmark.
+--- Returns nil for the "source" field when it is absent (so the column can be skipped).
+--- @param bm Bookmark
+--- @param col_config table Column configuration
+--- @return string|nil
 local function get_column_value(bm, col_config)
   if type(col_config.format) == "function" then
     local ok, val = pcall(col_config.format, bm)
@@ -96,6 +109,11 @@ local function get_column_value(bm, col_config)
   end
 end
 
+--- Build a single display line for a bookmark according to the current display config.
+--- Columns whose value is nil are omitted.
+--- @param bm Bookmark
+--- @param config table|nil
+--- @return string
 local function get_display_line(bm, config)
   local display = (config and config.display) or {}
   local columns = display.columns
@@ -121,6 +139,10 @@ local function get_display_line(bm, config)
   return table.concat(parts, sep)
 end
 
+--- Refresh the bookmark buffer with an optional filter string.
+--- @param bufnr number
+--- @param bookmarks Bookmark[]
+--- @param filter string|nil
 local function refresh_buffer(bufnr, bookmarks, filter)
   local state = buffer_state[bufnr]
   local config = state and state.config or {}
@@ -157,7 +179,9 @@ local function refresh_buffer(bufnr, bookmarks, filter)
   end
 end
 
---- Jump to the bookmark on the current line
+--- Jump to the bookmark on the current line of the pen buffer.
+--- Clamps line and column to valid ranges.
+--- @param bufnr number
 local function jump_to_bookmark(bufnr)
   local state = buffer_state[bufnr]
   if not state then return end
@@ -231,7 +255,8 @@ local function jump_to_bookmark(bufnr)
   -- Optionally close the pen window if it was a split, but for now leave it
 end
 
---- Toggle preview of the current bookmark
+--- Toggle a floating preview window for the bookmark on the current line.
+--- @param bufnr number
 local function toggle_preview(bufnr)
   local state = buffer_state[bufnr]
   if not state then return end
@@ -314,7 +339,8 @@ local function toggle_preview(bufnr)
   })
 end
 
---- Start incremental filter (real-time as you type)
+--- Start an incremental (live) filter prompt for the bookmark list.
+--- @param bufnr number
 local function start_incremental_filter(bufnr)
   local state = buffer_state[bufnr]
   if not state then return end
@@ -401,9 +427,10 @@ local function start_incremental_filter(bufnr)
   update_filter()
 end
 
---- Open the pen buffer for the given index, or all bookmarks if idx is nil
---- @param idx number|nil
---- @param config table
+--- Open the pen buffer for the given index, or all bookmarks if idx is nil.
+--- Opens in the current window (no split).
+--- @param idx number|nil Bookmark file index (1-based); nil merges all db_path
+--- @param config table Plugin configuration
 function M.open(idx, config)
   local bookmarks
   local bufname
@@ -516,8 +543,8 @@ function M.open(idx, config)
   end
 end
 
---- List all configured db_path files and allow jumping to edit them
---- @param config table
+--- List all configured db_path files and allow jumping to edit them.
+--- @param config table Plugin configuration
 function M.list(config)
   local paths = config.db_path or {}
   if #paths == 0 then

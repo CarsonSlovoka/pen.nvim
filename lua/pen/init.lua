@@ -1,5 +1,9 @@
+--- pen.nvim main module
+--- Provides setup and configuration for the pen bookmark plugin.
 local M = {}
 
+--- Default configuration.
+--- @type table
 local config = {
   db_path = {},
   display = {
@@ -16,7 +20,10 @@ local config = {
 }
 
 --- Setup the pen.nvim plugin.
---- @param opts table|nil Configuration options. Expected: db_path (list of string paths to .pen files)
+--- Registers user commands and applies configuration.
+--- @param opts table|nil Configuration options. Expected keys:
+---   - db_path: list of string paths to .pen/.tsv files (required, non-empty)
+---   - display: optional table controlling column display in PenOpen
 function M.setup(opts)
   opts = opts or {}
   config = vim.tbl_deep_extend("force", config, opts)
@@ -104,7 +111,8 @@ function M.setup(opts)
   })
 end
 
---- Get the current config (for internal use)
+--- Get the current configuration (intended for internal / keymap use).
+--- @return table Current config table
 function M.get_config()
   return config
 end

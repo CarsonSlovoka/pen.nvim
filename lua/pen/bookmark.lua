@@ -1,6 +1,17 @@
+--- pen.nvim bookmark module
+--- Handles loading, saving, and adding bookmarks in TSV format (note\tfile:line:col).
+
+--- @class Bookmark
+--- @field file string Absolute path, oil:// URL, or other scheme URL
+--- @field line number 1-based line number
+--- @field col number 1-based column number
+--- @field note string User-provided note
+--- @field source string|nil Basename of the source .pen file (only set in merged view)
+
 local M = {}
 
---- Default note is the filename of the current buffer
+--- Get a default note from the current buffer's filename.
+--- @return string
 local function get_default_note()
   local filename = vim.fn.expand("%:t")
   if filename == "" then
@@ -9,7 +20,12 @@ local function get_default_note()
   return filename
 end
 
---- Parse location string "file:line:col" (handles paths with colons by taking last two numbers)
+--- Parse a location string of the form "file:line:col".
+--- Handles paths that contain colons by matching the last two numeric components.
+--- @param loc string
+--- @return string|nil file
+--- @return number|nil line
+--- @return number|nil col
 local function parse_location(loc)
   local file, line, col = loc:match("^(.*):(%d+):(%d+)$")
   if file and line and col then
@@ -18,9 +34,9 @@ local function parse_location(loc)
   return nil, nil, nil
 end
 
---- Load bookmarks from a .pen file (TSV format: note\tfile:line:col)
---- @param path string
---- @return table list of bookmarks
+--- Load bookmarks from a .pen (TSV) file.
+--- @param path string Absolute path to the bookmark file
+--- @return Bookmark[] List of bookmarks
 function M.load(path)
   local bookmarks = {}
   if vim.fn.filereadable(path) == 0 then
@@ -46,9 +62,10 @@ function M.load(path)
   return bookmarks
 end
 
---- Save bookmarks to a .pen file (TSV)
---- @param path string
---- @param bookmarks table
+--- Save bookmarks to a .pen (TSV) file.
+--- Tabs inside notes are replaced with spaces to preserve the format.
+--- @param path string Absolute path to the bookmark file
+--- @param bookmarks Bookmark[] List of bookmarks
 function M.save(path, bookmarks)
   local lines = {}
   for _, bm in ipairs(bookmarks) do
@@ -62,8 +79,10 @@ function M.save(path, bookmarks)
 end
 
 --- Resolve the best location to bookmark from the current buffer.
---- For oil.nvim buffers, prefer the real path of the entry under the cursor.
---- @return string|nil file, number line, number col
+--- For oil.nvim buffers, prefers the real path of the entry under the cursor.
+--- @return string|nil file
+--- @return number line
+--- @return number col
 local function resolve_current_location()
   local bufname = vim.api.nvim_buf_get_name(0)
   local ft = vim.bo.filetype
@@ -105,10 +124,10 @@ local function resolve_current_location()
   return file, vim.fn.line("."), vim.fn.col(".")
 end
 
---- Add current cursor position to the specified bookmark file
---- @param idx number
---- @param note string|fun():string|nil
---- @param config table
+--- Add the current cursor position to the specified bookmark file.
+--- @param idx number Index into config.db_path (1-based)
+--- @param note string|fun():string|nil Optional note; if a function, it is called to obtain the note
+--- @param config table Plugin configuration table
 function M.add(idx, note, config)
   local path = config.db_path[idx]
   if not path then

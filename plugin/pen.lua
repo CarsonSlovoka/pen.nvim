@@ -1,5 +1,6 @@
--- pen.nvim plugin entry (optional early loading)
--- Main setup is expected to be called by the user via require("pen").setup()
+--- pen.nvim plugin entry point.
+--- Early loading guard and basic filetype detection.
+--- Main setup is expected to be called by the user via require("pen").setup().
 
 if vim.g.loaded_pen_nvim then
   return
