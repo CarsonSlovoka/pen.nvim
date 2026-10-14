@@ -26,7 +26,7 @@
 - `*.pen` 檔案的 filetype 偵測
 - `:PenOpen` 時 buffer 名稱使用對應 `.pen` 檔名，不再顯示 `[No Name]`
 - `display.columns` 支援 `index`／`db_index` 欄位：合併檢視（`:PenOpen` 無 index）時顯示該書籤所屬的 `db_path` 索引；單檔開啟時該欄自動隱藏
-- `display.columns` 的 `format` 函式回傳 `nil` 時，該欄位整欄隱藏（可用於條件顯示自訂欄位）
+- `display.columns` 支援 `hl` 選項：可傳入 `vim.api.keyset.highlight` 的 table（或既有 group 名稱字串），為該欄位套用高亮顏色與樣式
 
 ### Changed
 

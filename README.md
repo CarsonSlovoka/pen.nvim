@@ -29,10 +29,12 @@ require("pen").setup({
   -- 可選：自訂書籤列表的顯示欄位與對齊
   display = {
     columns = {
-      { field = "note", width = 40 },
-      { field = "file", width = 15, path = ":t" },
+      { field = "index",  width = 4,  align = "right",  hl = "Comment" },  -- 僅在 :PenOpen（無 index）時有值
+      { field = "source", width = 16, hl = "Comment" },                    -- 僅在 :PenOpen（無 index）時有值
+      { field = "note", width = 40},
+      { field = "file", width = 15, path = ":t", hl = { fg = "#88ccff", italic = true } },
       { field = "file", width = 50, path = "relative" }, -- absolute, basename
-      { field = "line", width = 6, align = "right" },
+      { field = "line", width = 6, align = "right", hl = { fg = "#aaaaaa" } },
       { field = "col", width = 4, align = "right" },
     },
     separator = "  ",
@@ -115,6 +117,7 @@ end, { desc = "Add bookmark to 1 (prompt note)" })
 | `align` | `"left"`（預設）或 `"right"` |
 | `path` | 僅對 `file` 有效：`"absolute"` / `"abs"` / `":p"`、`"relative"` / `"rel"` / `":."`、`"basename"` / `"base"` / `":t"`，或自訂 fnamemodify 修飾字串，或 function(file) |
 | `format` | function(bm) ，若提供則優先使用此函式產生該欄內容。回傳 `nil` 時整欄隱藏（用於條件顯示） |
+| `hl` | 高亮選項，內容為 `vim.api.keyset.highlight` 可接受的 table（如 `{ fg = "#ff8800", bold = true }`）。也可直接傳字串作為既有 highlight group 名稱。整欄（含補齊空白）會套用此高亮 |
 
 `display.separator` 為欄位間的分隔字串，預設為兩個空白
 

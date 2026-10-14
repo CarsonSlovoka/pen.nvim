@@ -8,13 +8,13 @@ local config = {
   db_path = {},
   display = {
     columns = {
-      { field = "index",  width = 4,  align = "right" }, -- 僅在 :PenOpen（無 index）時有值
-      { field = "source", width = 16 }, -- 僅在 :PenOpen（無 index）時有值
+      { field = "index",  width = 4,  align = "right",  hl = "Comment" }, -- 僅在 :PenOpen（無 index）時有值
+      { field = "source", width = 16, hl = "Comment" },                   -- 僅在 :PenOpen（無 index）時有值
       { field = "note",   width = 40 },
-      { field = "file",   width = 15, path = ":t" },
+      { field = "file",   width = 15, path = ":t",      hl = { fg = "#88ccff", italic = true } },
       { field = "file",   width = 60, path = "relative" }, -- absolute (:p), basename (:t), relative (:.)
-      { field = "line",   width = 6,  align = "right" },
-      { field = "col",    width = 4,  align = "right" },
+      { field = "line",   width = 6,  align = "right",  hl = "Comment" },
+      { field = "col",    width = 4,  align = "right",  hl = "Comment" },
     },
     separator = "  ",
   },

@@ -5,6 +5,38 @@ local M = {}
 -- Store state per buffer
 local buffer_state = {}
 
+-- Namespace for column highlights
+local hl_ns = vim.api.nvim_create_namespace("pen_display")
+
+-- Cache of highlight group names created from hl option tables
+local hl_group_cache = {}
+
+--- Get or create a highlight group for the given vim.api.keyset.highlight options.
+--- @param hl table|string|nil
+--- @return string|nil group name, or nil if no highlight
+local function get_hl_group(hl)
+  if not hl then
+    return nil
+  end
+  if type(hl) == "string" then
+    -- Allow existing group name as a convenience
+    return hl
+  end
+  if type(hl) ~= "table" then
+    return nil
+  end
+  local key = vim.inspect(hl)
+  local cached = hl_group_cache[key]
+  if cached then
+    return cached
+  end
+  local name = "PenHl_" .. vim.fn.sha256(key):sub(1, 12)
+  -- Define the group globally so it can be used by nvim_buf_add_highlight
+  vim.api.nvim_set_hl(0, name, hl)
+  hl_group_cache[key] = name
+  return name
+end
+
 --- Truncate a string to a given display width, appending "..." if needed.
 --- @param str string|any
 --- @param max_width number|nil
@@ -145,6 +177,55 @@ local function get_display_line(bm, config)
   return table.concat(parts, sep)
 end
 
+--- Build display line plus highlight ranges for columns that have an `hl` option.
+--- Ranges are 0-based byte offsets into the resulting line.
+--- @param bm Bookmark
+--- @param config table|nil
+--- @return string line
+--- @return table[] highlights  list of {start, finish, group}
+local function build_line_with_highlights(bm, config)
+  local display = (config and config.display) or {}
+  local columns = display.columns
+  if not columns or #columns == 0 then
+    columns = {
+      { field = "note", width = 40 },
+      { field = "file", width = 50, path = "relative" },
+      { field = "line", width = 6,  align = "right" },
+      { field = "col",  width = 4,  align = "right" },
+    }
+  end
+  local sep = display.separator or "  "
+  local sep_len = #sep
+
+  local parts = {}
+  local highlights = {}
+  local pos = 0
+  local first = true
+
+  for _, col in ipairs(columns) do
+    local val = get_column_value(bm, col)
+    if val ~= nil then
+      if not first then
+        pos = pos + sep_len
+      end
+      first = false
+
+      local padded = pad_display(val, col.width, col.align or "left")
+      local start_pos = pos
+      table.insert(parts, padded)
+      pos = pos + #padded
+
+      local group = get_hl_group(col.hl)
+      if group then
+        table.insert(highlights, { start = start_pos, finish = pos, group = group })
+      end
+    end
+  end
+
+  local line = table.concat(parts, sep)
+  return line, highlights
+end
+
 --- Parse a filter string into scope and query.
 --- Default scope is "note". Prefixes:
 ---   f: or p:  → path only
@@ -190,6 +271,19 @@ local function bookmark_matches(bm, scope, query, config)
   end
 end
 
+--- Apply column highlights to the buffer.
+--- @param bufnr number
+--- @param all_highlights table[][]  per-line list of highlight ranges
+local function apply_highlights(bufnr, all_highlights)
+  vim.api.nvim_buf_clear_namespace(bufnr, hl_ns, 0, -1)
+  for line_idx, ranges in ipairs(all_highlights) do
+    local lnum = line_idx - 1  -- 0-based
+    for _, r in ipairs(ranges) do
+      vim.api.nvim_buf_add_highlight(bufnr, hl_ns, r.group, lnum, r.start, r.finish)
+    end
+  end
+end
+
 --- Refresh the bookmark buffer with an optional filter string.
 --- Filter supports prefixes: (none) = note, f:/p: = path, a:/*: = all fields.
 --- @param bufnr number
@@ -201,11 +295,13 @@ local function refresh_buffer(bufnr, bookmarks, filter)
   local scope, query = parse_filter(filter)
   local lines = {}
   local filtered = {}
+  local all_highlights = {}
   for _, bm in ipairs(bookmarks) do
     if bookmark_matches(bm, scope, query, config) then
-      local line = get_display_line(bm, config)
+      local line, highlights = build_line_with_highlights(bm, config)
       table.insert(lines, line)
       table.insert(filtered, bm)
+      table.insert(all_highlights, highlights)
     end
   end
   -- Temporarily make modifiable to update lines
@@ -213,6 +309,7 @@ local function refresh_buffer(bufnr, bookmarks, filter)
   vim.bo[bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
   vim.bo[bufnr].modifiable = was_modifiable
+  apply_highlights(bufnr, all_highlights)
   buffer_state[bufnr].filtered = filtered
   buffer_state[bufnr].filter = filter or ""
   buffer_state[bufnr].filter_scope = scope
@@ -293,9 +390,11 @@ local function jump_to_bookmark(bufnr)
     return
   end
   local line = math.min(math.max(1, bm.line or 1), line_count)
-  local col = math.max(0, (bm.col or 1) - 1)
+  local col = math.max(0, (bm.col or 1) - 1)  -- 0-based for nvim_win_set_cursor
+  -- Clamp col to line length
   local line_text = vim.api.nvim_buf_get_lines(target_buf, line - 1, line, false)[1] or ""
-  col = math.min(col, #line_text)
+  local max_col = #line_text
+  col = math.min(col, max_col)
 
   local ok, err = pcall(vim.api.nvim_win_set_cursor, 0, { line, col })
   if not ok then
@@ -442,60 +541,58 @@ local function start_incremental_filter(bufnr)
 
   local function update_filter()
     if not vim.api.nvim_buf_is_valid(filter_buf) then return end
-    local input = vim.api.nvim_buf_get_lines(filter_buf, 0, 1, false)[1] or ""
-    refresh_buffer(bufnr, state.bookmarks, input)
-    -- Keep list cursor on first match if any
-    local list_win = state.win
-    if list_win and vim.api.nvim_win_is_valid(list_win) and #(state.filtered or {}) > 0 then
-      pcall(vim.api.nvim_win_set_cursor, list_win, { 1, 0 })
-    end
+    local lines = vim.api.nvim_buf_get_lines(filter_buf, 0, 1, false)
+    local text = lines[1] or ""
+    refresh_buffer(bufnr, state.bookmarks, text)
   end
 
-  vim.api.nvim_create_autocmd({ "TextChangedI", "TextChanged" }, {
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
     group = augroup,
     buffer = filter_buf,
     callback = update_filter,
   })
 
-  local function close_filter(keep)
-    if vim.api.nvim_win_is_valid(filter_win) then
-      vim.api.nvim_win_close(filter_win, true)
+  -- Close filter on leave or <Esc>/<CR>
+  local function close_filter(clear)
+    if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
+      vim.api.nvim_win_close(state.filter_win, true)
     end
-    pcall(vim.api.nvim_del_augroup_by_id, augroup)
     state.filter_win = nil
     state.filter_buf = nil
-    if not keep then
+    vim.api.nvim_clear_autocmds({ group = augroup })
+    if clear then
       refresh_buffer(bufnr, state.bookmarks, "")
     end
-    -- Return focus to the list window
-    if state.win and vim.api.nvim_win_is_valid(state.win) then
-      vim.api.nvim_set_current_win(state.win)
+    -- Return focus to the pen buffer
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      vim.api.nvim_set_current_buf(bufnr)
     end
-    vim.cmd("stopinsert")
   end
 
-  local fopts = { buffer = filter_buf, noremap = true, silent = true, nowait = true }
-  vim.keymap.set({ "i", "n" }, "<CR>", function() close_filter(true) end, fopts)
-  vim.keymap.set({ "i", "n" }, "<Esc>", function() close_filter(false) end, fopts)
-  vim.keymap.set("n", "q", function() close_filter(true) end, fopts)
+  vim.keymap.set("i", "<Esc>", function() close_filter(true) end, { buffer = filter_buf, silent = true })
+  vim.keymap.set("n", "<Esc>", function() close_filter(true) end, { buffer = filter_buf, silent = true })
+  vim.keymap.set("i", "<CR>", function() close_filter(false) end, { buffer = filter_buf, silent = true })
+  vim.keymap.set("n", "<CR>", function() close_filter(false) end, { buffer = filter_buf, silent = true })
 
-  -- Initial update in case default is non-empty
-  update_filter()
+  -- Also close on BufLeave of the filter
+  vim.api.nvim_create_autocmd("BufLeave", {
+    group = augroup,
+    buffer = filter_buf,
+    callback = function() close_filter(false) end,
+  })
 end
 
---- Open the pen buffer for the given index, or all bookmarks if idx is nil.
---- Opens in the current window (no split).
---- @param idx number|nil Bookmark file index (1-based); nil merges all db_path
---- @param config table Plugin configuration
+--- Open the bookmark list for a given db_path index, or all if idx is nil.
+--- @param idx number|nil
+--- @param config table
 function M.open(idx, config)
-  local bookmarks
+  local bookmarks = {}
+  local path
   local bufname
-  local path = nil
   local is_all = false
 
-  if not idx then
-    -- Merge bookmarks from all configured db_path
-    bookmarks = {}
+  if idx == nil then
+    -- Merge all
     for i, p in ipairs(config.db_path or {}) do
       local bms = require("pen.bookmark").load(p)
       local src = vim.fn.fnamemodify(p, ":t")
@@ -685,3 +782,4 @@ function M.list(config)
 end
 
 return M
+
