@@ -525,6 +525,38 @@ function M.open(idx, config)
       refresh_buffer(bufnr, state.bookmarks, "")
     end
   end, opts)
+  vim.keymap.set("n", "<C-e>", function()
+    -- Open the corresponding .pen file for editing
+    local state = buffer_state[bufnr]
+    if not state then return end
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local bm = state.filtered[row]
+    if not bm then return end
+
+    local path_to_edit
+    if state.is_all then
+      if bm.db_index and state.config and state.config.db_path then
+        path_to_edit = state.config.db_path[bm.db_index]
+      end
+    else
+      path_to_edit = state.path
+    end
+
+    if not path_to_edit or path_to_edit == "" then
+      vim.notify("Cannot determine .pen file to edit", vim.log.levels.WARN)
+      return
+    end
+
+    -- Close floating windows if open
+    if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+      vim.api.nvim_win_close(state.preview_win, true)
+    end
+    if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
+      vim.api.nvim_win_close(state.filter_win, true)
+    end
+
+    vim.cmd("edit " .. vim.fn.fnameescape(path_to_edit))
+  end, opts)
 
   -- Cleanup on buf delete
   vim.api.nvim_create_autocmd("BufDelete", {

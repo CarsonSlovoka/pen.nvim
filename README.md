@@ -79,6 +79,7 @@ end, { desc = "Add bookmark to 1 (prompt note)" })
 | `/`     | 開啟即時篩選（輸入時立即更新列表） |
 | `<Esc>` | 清除篩選                 |
 | `q`     | 關閉 buffer（回到前一個 buffer） |
+| `<C-e>` | 開啟並編輯此書籤所屬的 `.pen` 檔（方便手動調整） |
 
 在 PenLs buffer 中：
 
