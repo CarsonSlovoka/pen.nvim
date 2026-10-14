@@ -188,8 +188,7 @@ function M.open(idx, config)
 
   refresh_buffer(bufnr, bookmarks, "")
 
-  -- Open in a split
-  vim.cmd("split")
+  -- Open in current window (replace current buffer, no split)
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_set_current_buf(bufnr)
   vim.bo[bufnr].modifiable = false
@@ -210,7 +209,8 @@ function M.open(idx, config)
     if state and state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
       vim.api.nvim_win_close(state.preview_win, true)
     end
-    vim.cmd("close")
+    -- Delete the scratch buffer (switches back to previous buffer)
+    vim.api.nvim_buf_delete(bufnr, { force = true })
   end, opts)
   vim.keymap.set("n", "<Esc>", function()
     -- clear filter if any

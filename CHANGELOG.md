@@ -23,4 +23,7 @@
 - `*.pen` 檔案的 filetype 偵測
 - `:PenOpen` 時 buffer 名稱使用對應 `.pen` 檔名，不再顯示 `[No Name]`
 
-[Unreleased]: https://github.com/CarsonSlovoka/pen.nvim/compare/v0.0.0...HEAD
+### Changed
+
+- `pen.bookmark.add` 的 `note` 參數支援傳入 `function`，會被呼叫以取得註解內容（方便 keymap 互動輸入）
+- `pen.ui.open` 改為在目前 window 開啟，不再執行 `split`；`q` 改為刪除 scratch buffer 並回到前一個 buffer

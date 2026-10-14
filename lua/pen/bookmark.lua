@@ -63,7 +63,7 @@ end
 
 --- Add current cursor position to the specified bookmark file
 --- @param idx number
---- @param note string|nil
+--- @param note string|fun():string|nil
 --- @param config table
 function M.add(idx, note, config)
   local path = config.db_path[idx]
@@ -80,6 +80,11 @@ function M.add(idx, note, config)
 
   local line = vim.fn.line(".")
   local col = vim.fn.col(".")
+
+  -- Support note as a function (e.g. for interactive input in keymaps)
+  if type(note) == "function" then
+    note = note()
+  end
   note = note or get_default_note()
 
   local bookmarks = M.load(path)
