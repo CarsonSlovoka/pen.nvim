@@ -2,6 +2,16 @@ local M = {}
 
 local config = {
   db_path = {},
+  display = {
+    columns = {
+      { field = "note", width = 40 },
+      { field = "file", width = 15, path = ":t" },
+      { field = "file", width = 60, path = "relative" }, -- absolute (:p), basename (:t), relative (:.)
+      { field = "line", width = 6,  align = "right" },
+      { field = "col",  width = 4,  align = "right" },
+    },
+    separator = "  ",
+  },
 }
 
 --- Setup the pen.nvim plugin.

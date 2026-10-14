@@ -3,24 +3,129 @@ local M = {}
 -- Store state per buffer
 local buffer_state = {}
 
-local function get_display_line(bm)
-  local filename = vim.fn.fnamemodify(bm.file, ":t")
-  local rel = vim.fn.fnamemodify(bm.file, ":.")
-  if #rel > 60 then
-    rel = "..." .. rel:sub(-57)
+-- Truncate string to a given display width, appending "..." if needed
+local function truncate_to_display_width(str, max_width)
+  if not max_width or max_width <= 0 then
+    return str
   end
-  local prefix = ""
-  if bm.source then
-    prefix = string.format("[%s] ", bm.source)
+  str = tostring(str or "")
+  if vim.fn.strdisplaywidth(str) <= max_width then
+    return str
   end
-  return string.format("%s%s:%d:%d  %s", prefix, filename, bm.line, bm.col, bm.note or "")
+  local ellipsis = "..."
+  local ellipsis_w = 3
+  if max_width <= ellipsis_w then
+    return ellipsis:sub(1, max_width)
+  end
+  local target = max_width - ellipsis_w
+  local char_count = vim.fn.strchars(str)
+  local low, high = 0, char_count
+  local best = ""
+  while low <= high do
+    local mid = math.floor((low + high) / 2)
+    local part = vim.fn.strcharpart(str, 0, mid)
+    if vim.fn.strdisplaywidth(part) <= target then
+      best = part
+      low = mid + 1
+    else
+      high = mid - 1
+    end
+  end
+  return best .. ellipsis
+end
+
+-- Pad a string to the given display width (left or right align)
+local function pad_display(str, width, align)
+  if not width or width <= 0 then
+    return tostring(str or "")
+  end
+  str = tostring(str or "")
+  local truncated = truncate_to_display_width(str, width)
+  local dw = vim.fn.strdisplaywidth(truncated)
+  local pad = width - dw
+  if pad <= 0 then
+    return truncated
+  end
+  local spaces = string.rep(" ", pad)
+  if align == "right" then
+    return spaces .. truncated
+  else
+    return truncated .. spaces
+  end
+end
+
+-- Extract the display value for one column from a bookmark
+local function get_column_value(bm, col_config)
+  if type(col_config.format) == "function" then
+    local ok, val = pcall(col_config.format, bm)
+    if ok then
+      return tostring(val or "")
+    end
+    return ""
+  end
+
+  local field = col_config.field or ""
+  if field == "note" then
+    return bm.note or ""
+  elseif field == "file" then
+    local file = bm.file or ""
+    local path_fmt = col_config.path or "relative"
+    if type(path_fmt) == "function" then
+      local ok, val = pcall(path_fmt, file)
+      return ok and tostring(val or "") or ""
+    elseif path_fmt == "absolute" or path_fmt == "abs" or path_fmt == ":p" then
+      return vim.fn.fnamemodify(file, ":p")
+    elseif path_fmt == "basename" or path_fmt == "base" or path_fmt == ":t" then
+      return vim.fn.fnamemodify(file, ":t")
+    elseif path_fmt == "relative" or path_fmt == "rel" or path_fmt == ":." then
+      return vim.fn.fnamemodify(file, ":.")
+    else
+      -- Treat as a fnamemodify modifier string
+      return vim.fn.fnamemodify(file, tostring(path_fmt))
+    end
+  elseif field == "line" then
+    return tostring(bm.line or "")
+  elseif field == "col" then
+    return tostring(bm.col or "")
+  elseif field == "source" then
+    return bm.source or ""
+  elseif field == "loc" then
+    return string.format("%d:%d", bm.line or 0, bm.col or 0)
+  else
+    return tostring(bm[field] or "")
+  end
+end
+
+local function get_display_line(bm, config)
+  local display = (config and config.display) or {}
+  local columns = display.columns
+  if not columns or #columns == 0 then
+    -- Fallback default (should not happen if setup was called)
+    columns = {
+      { field = "note", width = 40 },
+      { field = "file", width = 50, path = "relative" },
+      { field = "line", width = 6,  align = "right" },
+      { field = "col",  width = 4,  align = "right" },
+    }
+  end
+  local sep = display.separator or "  "
+
+  local parts = {}
+  for _, col in ipairs(columns) do
+    local val = get_column_value(bm, col)
+    local padded = pad_display(val, col.width, col.align or "left")
+    table.insert(parts, padded)
+  end
+  return table.concat(parts, sep)
 end
 
 local function refresh_buffer(bufnr, bookmarks, filter)
+  local state = buffer_state[bufnr]
+  local config = state and state.config or {}
   local lines = {}
   local filtered = {}
   for _, bm in ipairs(bookmarks) do
-    local line = get_display_line(bm)
+    local line = get_display_line(bm, config)
     if not filter or filter == "" or line:lower():find(filter:lower(), 1, true) then
       table.insert(lines, line)
       table.insert(filtered, bm)
@@ -116,7 +221,9 @@ local function jump_to_bookmark(bufnr)
     return
   end
   if line ~= bm.line then
-    vim.notify(string.format("Bookmark line %d out of range (file has %d lines), jumped to line %d", bm.line, line_count, line), vim.log.levels.WARN)
+    vim.notify(
+    string.format("Bookmark line %d out of range (file has %d lines), jumped to line %d", bm.line, line_count, line),
+      vim.log.levels.WARN)
   end
   vim.cmd("normal! zz")
   -- Optionally close the pen window if it was a split, but for now leave it
@@ -341,6 +448,7 @@ function M.open(idx, config)
     path = path,
     idx = idx,
     is_all = is_all,
+    config = config,
   }
 
   refresh_buffer(bufnr, bookmarks, "")

@@ -23,6 +23,7 @@
 - 自動建立 `db_path` 所需目錄
 - `*.pen` 檔案的 filetype 偵測
 - `:PenOpen` 時 buffer 名稱使用對應 `.pen` 檔名，不再顯示 `[No Name]`
+- `display` 設定：可自訂 `:PenOpen` 書籤列表的欄位順序、欄寬、對齊方式與格式（例如路徑使用絕對／相對路徑，或自訂 format 函式）
 
 ### Changed
 

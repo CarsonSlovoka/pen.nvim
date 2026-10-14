@@ -21,10 +21,21 @@
 vim.cmd.packadd("pen.nvim")
 require("pen").setup({
   db_path = {
-    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_01.pen",
-    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_02.pen",
+    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_01.tsv",
+    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_02.tsv",
     -- ...
-    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_09.pen",
+    vim.fn.stdpath("data") .. "/pen.nvim/bookmark_09.tsv",
+  },
+  -- 可選：自訂書籤列表的顯示欄位與對齊
+  display = {
+    columns = {
+      { field = "note", width = 40 },
+      { field = "file", width = 15, path = ":t" },
+      { field = "file", width = 50, path = "relative" }, -- absolute, basename
+      { field = "line", width = 6, align = "right" },
+      { field = "col", width = 4, align = "right" },
+    },
+    separator = "  ",
   },
 })
 ```
@@ -45,7 +56,7 @@ require("pen").setup({
 
 `require("pen.ui").open(idx, config)`：`idx` 為數字時開啟該組；傳 `nil` 時會將所有 `db_path` 的書籤整合成一個列表供篩選與跳轉。
 
-`pen.bookmark.add` 的第二個參數 `note` 可以是 `string`、`nil`，或 **function**。  
+`pen.bookmark.add` 的第二個參數 `note` 可以是 `string`、`nil`，或 **function**。
 若傳入 function，會被呼叫並使用其回傳值作為註解（適合互動式輸入）：
 
 ```lua
@@ -79,7 +90,48 @@ end, { desc = "Add bookmark to 1 (prompt note)" })
 
 ## 設定
 
-僅支援 `db_path`，必須為絕對路徑的 table，插件會自動建立父目錄
+- `db_path`：必須為絕對路徑的 table，插件會自動建立父目錄
+- `display`：控制 `:PenOpen` 時書籤列表的顯示方式（可自訂欄位順序、寬度與格式）
+
+### display 設定
+
+`display.columns` 是一個 table，每個元素定義一個欄位：
+
+| 鍵 | 說明 |
+|----|------|
+| `field` | 欄位名稱：`note`、`file`、`line`、`col`、`source`（合併檢視時的來源檔名）、`loc`（line:col）或其他 bookmark 欄位 |
+| `width` | 欄寬（顯示寬度），超過會截斷並加上 `...`，不足則補空白以對齊 |
+| `align` | `"left"`（預設）或 `"right"` |
+| `path` | 僅對 `file` 有效：`"absolute"` / `"abs"` / `":p"`、`"relative"` / `"rel"` / `":."`、`"basename"` / `"base"` / `":t"`，或自訂 fnamemodify 修飾字串，或 function(file) |
+| `format` | function(bm) ，若提供則優先使用此函式產生該欄內容（可完全自訂格式） |
+
+`display.separator` 為欄位間的分隔字串，預設為兩個空白
+
+範例（註解在前，路徑用絕對路徑，並在合併檢視顯示來源）：
+
+```lua
+display = {
+  columns = {
+    { field = "source", width = 16 },          -- 僅在 :PenOpen（無 index）時有值
+    { field = "note", width = 36 },
+    { field = "file", width = 60, path = "absolute" },
+    { field = "loc", width = 10, align = "right" },
+  },
+  separator = " │ ",
+}
+```
+
+或使用自訂 format 函式：
+
+```lua
+{
+  field = "file",
+  width = 40,
+  format = function(bm)
+    return vim.fn.fnamemodify(bm.file or "", ":~:.")
+  end,
+}
+```
 
 ## 檔案格式
 
