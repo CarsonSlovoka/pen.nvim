@@ -7,6 +7,7 @@
 --- @field col number 1-based column number
 --- @field note string User-provided note
 --- @field source string|nil Basename of the source .pen file (only set in merged view)
+--- @field db_index number|nil Index into config.db_path (only set in merged view)
 
 local M = {}
 

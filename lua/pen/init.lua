@@ -8,6 +8,7 @@ local config = {
   db_path = {},
   display = {
     columns = {
+      { field = "index",  width = 4,  align = "right" }, -- 僅在 :PenOpen（無 index）時有值
       { field = "source", width = 16 }, -- 僅在 :PenOpen（無 index）時有值
       { field = "note",   width = 40 },
       { field = "file",   width = 15, path = ":t" },

@@ -23,7 +23,8 @@
 - 自動建立 `db_path` 所需目錄
 - `*.pen` 檔案的 filetype 偵測
 - `:PenOpen` 時 buffer 名稱使用對應 `.pen` 檔名，不再顯示 `[No Name]`
-- `display` 設定：可自訂 `:PenOpen` 書籤列表的欄位順序、欄寬、對齊方式與格式（例如路徑使用絕對／相對路徑，或自訂 format 函式）
+- `display.columns` 支援 `index`／`db_index` 欄位：合併檢視（`:PenOpen` 無 index）時顯示該書籤所屬的 `db_path` 索引；單檔開啟時該欄自動隱藏
+- `display.columns` 的 `format` 函式回傳 `nil` 時，該欄位整欄隱藏（可用於條件顯示自訂欄位）
 
 ### Changed
 
@@ -33,7 +34,7 @@
 - 跳轉書籤時會將行號與欄位限制在有效範圍內，避免 `Invalid cursor line: out of range` 錯誤
 - 在 oil.nvim buffer 加入書籤時，改為記錄游標下的真實檔案／目錄路徑（而非 `oil://` buffer 本身）
 - 支援跳轉到 `oil://` 等特殊路徑（不再被 filereadable 檢查擋住）
-- `display.columns` 如果其計算結果為`nil`那麼此欄位將不顯示 (用於`filed = source`)
+- `display.columns` 如果其計算結果為 `nil` 那麼此欄位將不顯示（用於 `field = "source"`、`field = "index"`，以及 `format` 回傳 `nil`）
 
 ### Fixed
 

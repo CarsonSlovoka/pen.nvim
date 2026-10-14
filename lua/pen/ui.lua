@@ -64,7 +64,7 @@ local function pad_display(str, width, align)
 end
 
 --- Extract the display value for one column from a bookmark.
---- Returns nil for the "source" field when it is absent (so the column can be skipped).
+--- Returns nil when the column should be omitted (source/db_index absent, or format returns nil).
 --- @param bm Bookmark
 --- @param col_config table Column configuration
 --- @return string|nil
@@ -72,7 +72,11 @@ local function get_column_value(bm, col_config)
   if type(col_config.format) == "function" then
     local ok, val = pcall(col_config.format, bm)
     if ok then
-      return tostring(val or "")
+      -- nil from format hides the column entirely
+      if val == nil then
+        return nil
+      end
+      return tostring(val)
     end
     return ""
   end
@@ -102,6 +106,8 @@ local function get_column_value(bm, col_config)
     return tostring(bm.col or "")
   elseif field == "source" then
     return bm.source or nil
+  elseif field == "index" or field == "db_index" then
+    return bm.db_index and tostring(bm.db_index) or nil
   elseif field == "loc" then
     return string.format("%d:%d", bm.line or 0, bm.col or 0)
   else
@@ -440,11 +446,12 @@ function M.open(idx, config)
   if not idx then
     -- Merge bookmarks from all configured db_path
     bookmarks = {}
-    for _, p in ipairs(config.db_path or {}) do
+    for i, p in ipairs(config.db_path or {}) do
       local bms = require("pen.bookmark").load(p)
       local src = vim.fn.fnamemodify(p, ":t")
       for _, bm in ipairs(bms) do
         bm.source = src
+        bm.db_index = i
         table.insert(bookmarks, bm)
       end
     end

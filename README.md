@@ -99,20 +99,21 @@ end, { desc = "Add bookmark to 1 (prompt note)" })
 
 | 鍵 | 說明 |
 |----|------|
-| `field` | 欄位名稱：`note`、`file`、`line`、`col`、`source`（合併檢視時的來源檔名）、`loc`（line:col）或其他 bookmark 欄位 |
+| `field` | 欄位名稱：`note`、`file`、`line`、`col`、`source`（合併檢視時的來源檔名）、`index`／`db_index`（合併檢視時的 db_path 索引）、`loc`（line:col）或其他 bookmark 欄位 |
 | `width` | 欄寬（顯示寬度），超過會截斷並加上 `...`，不足則補空白以對齊 |
 | `align` | `"left"`（預設）或 `"right"` |
 | `path` | 僅對 `file` 有效：`"absolute"` / `"abs"` / `":p"`、`"relative"` / `"rel"` / `":."`、`"basename"` / `"base"` / `":t"`，或自訂 fnamemodify 修飾字串，或 function(file) |
-| `format` | function(bm) ，若提供則優先使用此函式產生該欄內容（可完全自訂格式） |
+| `format` | function(bm) ，若提供則優先使用此函式產生該欄內容。回傳 `nil` 時整欄隱藏（用於條件顯示） |
 
 `display.separator` 為欄位間的分隔字串，預設為兩個空白
 
-範例（註解在前，路徑用絕對路徑，並在合併檢視顯示來源）：
+範例（合併檢視顯示索引與來源，路徑用絕對路徑）：
 
 ```lua
 display = {
   columns = {
-    { field = "source", width = 16 },          -- 僅在 :PenOpen（無 index）時有值
+    { field = "index", width = 4, align = "right" }, -- 僅在 :PenOpen（無 index）時有值
+    { field = "source", width = 16 },               -- 僅在 :PenOpen（無 index）時有值
     { field = "note", width = 36 },
     { field = "file", width = 60, path = "absolute" },
     { field = "loc", width = 10, align = "right" },
@@ -121,14 +122,15 @@ display = {
 }
 ```
 
-或使用自訂 format 函式：
+或使用自訂 format 函式（回傳 nil 可隱藏整欄）：
 
 ```lua
 {
-  field = "file",
-  width = 40,
+  width = 4,
+  align = "right",
   format = function(bm)
-    return vim.fn.fnamemodify(bm.file or "", ":~:.")
+    -- 僅合併檢視時顯示 index
+    return bm.db_index and tostring(bm.db_index) or nil
   end,
 }
 ```
