@@ -21,6 +21,7 @@ local config = {
   preview = {
     context = 5,      -- 預覽時顯示書籤行前後各幾行
     auto_open = true, -- 進入書籤列表時是否自動開啟預覽
+    syntax = true,    -- 預覽時依據檔案副檔名啟用語法高亮（預設開啟）
   },
 }
 
@@ -29,7 +30,7 @@ local config = {
 --- @param opts table|nil Configuration options. Expected keys:
 ---   - db_path: list of string paths to .pen/.tsv files (required, non-empty)
 ---   - display: optional table controlling column display in PenOpen
----   - preview: optional table controlling preview behavior (context lines, auto_open)
+---   - preview: optional table controlling preview behavior (context lines, auto_open, syntax)
 function M.setup(opts)
   opts = opts or {}
   config = vim.tbl_deep_extend("force", config, opts)

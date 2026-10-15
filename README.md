@@ -45,6 +45,7 @@ require("pen").setup({
   preview = {
     context = 5,      -- 前後各顯示幾行（可用 { } 即時調整）
     auto_open = true, -- 進入列表時自動開啟預覽
+    syntax = true,    -- 依據檔案副檔名啟用語法高亮（預設開啟；找不到對應規則時不影響）
   },
 })
 ```

@@ -8,6 +8,9 @@ local buffer_state = {}
 -- Namespace for column highlights
 local hl_ns = vim.api.nvim_create_namespace("pen_display")
 
+-- Namespace for preview highlights and virtual text
+local preview_ns = vim.api.nvim_create_namespace("pen_preview")
+
 -- Cache of highlight group names created from hl option tables
 local hl_group_cache = {}
 
@@ -445,6 +448,8 @@ local function update_preview(bufnr)
     vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
     vim.bo[preview_buf].modifiable = false
     vim.api.nvim_buf_clear_namespace(preview_buf, -1, 0, -1)
+    -- Reset filetype so previous syntax does not linger on non-code previews
+    vim.bo[preview_buf].filetype = ""
   end
 
   if not bm or not bm.file then
@@ -513,17 +518,58 @@ local function update_preview(bufnr)
   local lines = vim.fn.readfile(bm.file)
   local start_line = math.max(1, (bm.line or 1) - context)
   local end_line = math.min(#lines, (bm.line or 1) + context)
-  local preview_lines = {}
-  for i = start_line, end_line do
-    table.insert(preview_lines, string.format("%4d | %s", i, lines[i] or ""))
+
+  local syntax_enabled = true
+  if state.config and state.config.preview and state.config.preview.syntax == false then
+    syntax_enabled = false
   end
 
-  set_lines(preview_lines)
+  local pure_lines = {}
+  for i = start_line, end_line do
+    table.insert(pure_lines, lines[i] or "")
+  end
 
-  -- Highlight the target line (0-based)
-  local highlight_line = bm.line - start_line
-  if highlight_line >= 0 and highlight_line < #preview_lines then
-    vim.api.nvim_buf_add_highlight(preview_buf, -1, "Search", highlight_line, 0, -1)
+  if syntax_enabled then
+    -- Set pure content so filetype/syntax/treesitter can highlight correctly
+    set_lines(pure_lines)
+
+    -- Detect filetype from filename / extension
+    local ft = vim.filetype.match({ filename = bm.file })
+    if ft and ft ~= "" then
+      vim.bo[preview_buf].filetype = ft
+    else
+      vim.bo[preview_buf].filetype = ""
+    end
+
+    -- Add line number prefixes as inline virtual text (does not affect syntax)
+    local highlight_line = (bm.line or 1) - start_line
+    for i = 0, #pure_lines - 1 do
+      local line_num = start_line + i
+      local prefix = string.format("%4d | ", line_num)
+      local is_target = (i == highlight_line)
+      local hl = is_target and "Search" or "LineNr"
+      vim.api.nvim_buf_set_extmark(preview_buf, preview_ns, i, 0, {
+        virt_text = { { prefix, hl } },
+        virt_text_pos = "inline",
+      })
+    end
+
+    -- Optional: also highlight the target line background (syntax is usually fg)
+    if highlight_line >= 0 and highlight_line < #pure_lines then
+      vim.api.nvim_buf_add_highlight(preview_buf, preview_ns, "Search", highlight_line, 0, -1)
+    end
+  else
+    -- Fallback: embed line numbers in the text (no syntax)
+    local preview_lines = {}
+    for i = start_line, end_line do
+      table.insert(preview_lines, string.format("%4d | %s", i, lines[i] or ""))
+    end
+    set_lines(preview_lines)
+
+    local highlight_line = (bm.line or 1) - start_line
+    if highlight_line >= 0 and highlight_line < #preview_lines then
+      vim.api.nvim_buf_add_highlight(preview_buf, -1, "Search", highlight_line, 0, -1)
+    end
   end
 
   vim.api.nvim_win_set_config(state.preview_win, {
