@@ -36,6 +36,10 @@
 
 ### Changed
 
+- 預覽開啟時，`<Esc>` 也可關閉預覽（除了再按一次 `p`）
+- 篩選完成（`<CR>`）後，若篩選前預覽是開啟的，會自動重新開啟預覽
+
+
 - `pen.bookmark.add` 的 `note` 參數支援傳入 `function`，會被呼叫以取得註解內容（方便 keymap 互動輸入）
 - `pen.ui.open` 改為在目前 window 開啟，不再執行 `split`；`q` 改為刪除 scratch buffer 並回到前一個 buffer
 - `/` 篩選改為即時過濾（輸入時立即更新列表，不需等到按下 Enter）

@@ -642,6 +642,10 @@ local function start_incremental_filter(bufnr)
     state.filter_win = nil
   end
 
+  -- Remember if preview was open so we can restore it after filter completes
+  -- (opening the filter window triggers BufLeave which closes the preview)
+  state._preview_was_open = state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) or false
+
   local filter_buf = vim.api.nvim_create_buf(false, true)
   vim.bo[filter_buf].buftype = "nofile"
   vim.bo[filter_buf].bufhidden = "wipe"
@@ -710,6 +714,12 @@ local function start_incremental_filter(bufnr)
     -- Leave insert mode so the user can immediately navigate / select
     -- (filter was opened with startinsert!)
     vim.cmd("stopinsert")
+
+    -- Restore preview if it was open before starting the filter and this is not a clear/cancel
+    if not clear and state._preview_was_open then
+      toggle_preview(bufnr)
+    end
+    state._preview_was_open = nil
 
     state._closing_filter = nil
   end
@@ -818,9 +828,14 @@ function M.open(idx, config)
     vim.api.nvim_buf_delete(bufnr, { force = true })
   end, opts)
   vim.keymap.set("n", "<Esc>", function()
-    -- clear filter if any
     local state = buffer_state[bufnr]
-    if state and state.filter ~= "" then
+    if not state then return end
+    -- Close preview if open
+    if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+      toggle_preview(bufnr)
+    end
+    -- clear filter if any
+    if state.filter ~= "" then
       refresh_buffer(bufnr, state.bookmarks, "")
     end
   end, opts)
