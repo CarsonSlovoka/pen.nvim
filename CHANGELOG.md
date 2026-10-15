@@ -39,8 +39,10 @@
 - `display.columns` 如果其計算結果為 `nil` 那麼此欄位將不顯示（用於 `field = "source"`、`field = "index"`，以及 `format` 回傳 `nil`）
 - `/` 篩選按下 `<CR>` 確認後會自動離開 insert 模式，無需再按一次 `<Esc>`
 - 預覽視窗（`p`）開啟後會隨著游標移動即時更新內容
+- 預覽支援 `oil://` 目錄書籤：顯示該目錄的內容列表（目錄名稱後加上 `/`）
 
 ### Fixed
 
 - 修復書籤行號超出檔案範圍時跳轉失敗的問題
+- 修復 `oil://` 目錄書籤預覽時顯示 "Preview not available for oil://" 的問題
 

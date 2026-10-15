@@ -453,6 +453,49 @@ local function update_preview(bufnr)
     return
   end
 
+  -- oil:// directory bookmarks: show a simple directory listing
+  if bm.file:match("^oil://") then
+    local real_path = bm.file:sub(7) -- strip "oil://"
+    if real_path == "" then
+      set_lines({ "Invalid oil:// path" })
+      vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
+      return
+    end
+    if vim.fn.isdirectory(real_path) == 1 then
+      local entries = vim.fn.readdir(real_path)
+      if type(entries) ~= "table" then
+        set_lines({ "Cannot list directory: " .. real_path })
+        vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
+        return
+      end
+      table.sort(entries)
+      local dir = real_path
+      if not dir:match("/$") then
+        dir = dir .. "/"
+      end
+      local preview_lines = {}
+      for _, name in ipairs(entries) do
+        local full = dir .. name
+        local is_dir = vim.fn.isdirectory(full) == 1
+        table.insert(preview_lines, name .. (is_dir and "/" or ""))
+      end
+      if #preview_lines == 0 then
+        preview_lines = { "(empty directory)" }
+      end
+      set_lines(preview_lines)
+      local display_name = real_path:gsub("/$", "")
+      display_name = vim.fn.fnamemodify(display_name, ":t")
+      vim.api.nvim_win_set_config(state.preview_win, {
+        title = "Preview: " .. display_name .. "/",
+      })
+      return
+    else
+      set_lines({ "oil:// path is not a directory: " .. real_path })
+      vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
+      return
+    end
+  end
+
   if bm.file:match("^%w+://") then
     set_lines({ "Preview not available for " .. (bm.file:match("^(%w+://)") or "scheme") })
     vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
