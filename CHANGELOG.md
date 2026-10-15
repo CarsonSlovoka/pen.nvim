@@ -9,7 +9,13 @@
 
 ### Added
 
-- 初始版本
+- `preview` 設定：
+  - `context`（預設 5）：控制預覽視窗顯示書籤行前後各幾行
+  - `auto_open`（預設 true）：進入書籤列表時是否自動開啟預覽
+- 書籤列表中新增即時調整預覽上下文的按鍵：
+  - `}` 增加上下文行數
+  - `{` 減少上下文行數
+  （類似 lazygit 的 diff context 調整；調整後立即更新預覽內容與視窗大小，標題顯示 `±N`）
 - `:PenAdd <index> [note]` 將目前位置寫入對應 `.pen` 檔
 - `:PenOpen <index>` 開啟書籤 buffer
 - `:PenOpen`（省略 index）與 `require("pen.ui").open(nil, config)` 將所有 db_path 的書籤整合成單一 buffer，方便跨組搜尋與跳轉（顯示來源 `.pen` 檔名）

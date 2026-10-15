@@ -508,10 +508,11 @@ local function update_preview(bufnr)
     return
   end
 
-  -- Read context around the line (5 before, 5 after)
+  -- Read context around the line
+  local context = state.preview_context or 5
   local lines = vim.fn.readfile(bm.file)
-  local start_line = math.max(1, bm.line - 5)
-  local end_line = math.min(#lines, bm.line + 5)
+  local start_line = math.max(1, (bm.line or 1) - context)
+  local end_line = math.min(#lines, (bm.line or 1) + context)
   local preview_lines = {}
   for i = start_line, end_line do
     table.insert(preview_lines, string.format("%4d | %s", i, lines[i] or ""))
@@ -526,7 +527,7 @@ local function update_preview(bufnr)
   end
 
   vim.api.nvim_win_set_config(state.preview_win, {
-    title = "Preview: " .. vim.fn.fnamemodify(bm.file, ":t") .. ":" .. bm.line,
+    title = string.format("Preview: %s:%d (±%d)", vim.fn.fnamemodify(bm.file, ":t"), bm.line, context),
   })
 end
 
@@ -556,7 +557,8 @@ local function toggle_preview(bufnr)
   vim.bo[preview_buf].buftype = "nofile"
 
   local width = 80
-  local height = 12
+  local context = state.preview_context or 5
+  local height = math.min(math.max(context * 2 + 3, 8), math.floor(vim.o.lines * 0.7))
   local row_pos = math.floor((vim.o.lines - height) / 2)
   local col_pos = math.floor((vim.o.columns - width) / 2)
 
@@ -600,6 +602,32 @@ local function toggle_preview(bufnr)
 
   -- Initial content
   update_preview(bufnr)
+end
+
+--- Adjust the preview context size (lines before/after the bookmark).
+--- Works even if preview is not currently open (value is stored for next open).
+--- If preview is open, resizes the window and refreshes content immediately.
+--- @param bufnr number
+--- @param delta number positive to increase, negative to decrease
+local function adjust_preview_context(bufnr, delta)
+  local state = buffer_state[bufnr]
+  if not state then return end
+  local new_context = math.max(0, (state.preview_context or 5) + delta)
+  if new_context == state.preview_context then return end
+  state.preview_context = new_context
+
+  if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+    local height = math.min(math.max(new_context * 2 + 3, 8), math.floor(vim.o.lines * 0.7))
+    local row_pos = math.floor((vim.o.lines - height) / 2)
+    vim.api.nvim_win_set_config(state.preview_win, {
+      height = height,
+      row = row_pos,
+    })
+    update_preview(bufnr)
+  end
+
+  -- Transient feedback (does not go into message history permanently in the same way)
+  vim.api.nvim_echo({{ string.format("Preview context: ±%d", new_context), "Normal" }}, false, {})
 end
 
 --- Start an incremental (live) filter prompt for the bookmark list.
@@ -749,6 +777,7 @@ function M.open(idx, config)
     idx = idx,
     is_all = is_all,
     config = config,
+    preview_context = (config.preview and config.preview.context) or 5,
   }
 
   refresh_buffer(bufnr, bookmarks, "")
@@ -768,6 +797,8 @@ function M.open(idx, config)
   local opts = { buffer = bufnr, noremap = true, silent = true }
   vim.keymap.set("n", "<CR>", function() jump_to_bookmark(bufnr) end, opts)
   vim.keymap.set("n", "p", function() toggle_preview(bufnr) end, opts)
+  vim.keymap.set("n", "}", function() adjust_preview_context(bufnr, 1) end, opts)
+  vim.keymap.set("n", "{", function() adjust_preview_context(bufnr, -1) end, opts)
   vim.keymap.set("n", "/", function() start_incremental_filter(bufnr) end, opts)
   vim.keymap.set("n", "q", function()
     -- close preview if open
@@ -845,6 +876,12 @@ function M.open(idx, config)
       buffer_state[bufnr] = nil
     end,
   })
+
+  -- Auto-open preview if configured (default true)
+  local preview_cfg = config.preview or {}
+  if preview_cfg.auto_open ~= false then
+    toggle_preview(bufnr)
+  end
 
   if is_all then
     vim.notify(string.format("Opened all pen bookmarks (%d)", #bookmarks), vim.log.levels.INFO)
