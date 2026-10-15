@@ -330,6 +330,13 @@ local function refresh_buffer(bufnr, bookmarks, filter)
     end
     vim.api.nvim_set_option_value("statusline", status, { win = win })
   end
+
+  -- If preview is open, refresh it for the (possibly new) current item
+  if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+    vim.schedule(function()
+      update_preview(bufnr)
+    end)
+  end
 end
 
 --- Jump to the bookmark on the current line of the pen buffer.
@@ -410,35 +417,51 @@ local function jump_to_bookmark(bufnr)
   -- Optionally close the pen window if it was a split, but for now leave it
 end
 
---- Toggle a floating preview window for the bookmark on the current line.
+--- Update (or create) the floating preview for the bookmark under the cursor.
+--- Does nothing if preview is not currently open.
 --- @param bufnr number
-local function toggle_preview(bufnr)
+local function update_preview(bufnr)
   local state = buffer_state[bufnr]
-  if not state then return end
-
-  -- Close existing preview if any
-  if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
-    vim.api.nvim_win_close(state.preview_win, true)
-    state.preview_win = nil
-    state.preview_buf = nil
+  if not state or not state.preview_win or not vim.api.nvim_win_is_valid(state.preview_win) then
     return
   end
 
-  local row = vim.api.nvim_win_get_cursor(0)[1]
-  local bm = state.filtered[row]
+  local win = state.win
+  local row = 1
+  if win and vim.api.nvim_win_is_valid(win) then
+    row = vim.api.nvim_win_get_cursor(win)[1]
+  else
+    row = vim.api.nvim_win_get_cursor(0)[1]
+  end
+
+  local bm = state.filtered and state.filtered[row]
+  local preview_buf = state.preview_buf
+  if not preview_buf or not vim.api.nvim_buf_is_valid(preview_buf) then
+    return
+  end
+
+  local function set_lines(lines)
+    vim.bo[preview_buf].modifiable = true
+    vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, lines)
+    vim.bo[preview_buf].modifiable = false
+    vim.api.nvim_buf_clear_namespace(preview_buf, -1, 0, -1)
+  end
+
   if not bm or not bm.file then
-    vim.notify("Cannot preview: missing file", vim.log.levels.WARN)
+    set_lines({ "Cannot preview: missing file" })
+    vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
     return
   end
 
-  -- oil:// and other scheme URLs cannot be previewed with readfile
   if bm.file:match("^%w+://") then
-    vim.notify("Preview not available for " .. bm.file:match("^(%w+://)"), vim.log.levels.WARN)
+    set_lines({ "Preview not available for " .. (bm.file:match("^(%w+://)") or "scheme") })
+    vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
     return
   end
 
   if vim.fn.filereadable(bm.file) == 0 then
-    vim.notify("Cannot preview: file not readable", vim.log.levels.WARN)
+    set_lines({ "Cannot preview: file not readable" })
+    vim.api.nvim_win_set_config(state.preview_win, { title = "Preview" })
     return
   end
 
@@ -451,18 +474,46 @@ local function toggle_preview(bufnr)
     table.insert(preview_lines, string.format("%4d | %s", i, lines[i] or ""))
   end
 
+  set_lines(preview_lines)
+
+  -- Highlight the target line (0-based)
+  local highlight_line = bm.line - start_line
+  if highlight_line >= 0 and highlight_line < #preview_lines then
+    vim.api.nvim_buf_add_highlight(preview_buf, -1, "Search", highlight_line, 0, -1)
+  end
+
+  vim.api.nvim_win_set_config(state.preview_win, {
+    title = "Preview: " .. vim.fn.fnamemodify(bm.file, ":t") .. ":" .. bm.line,
+  })
+end
+
+--- Toggle a floating preview window for the bookmark on the current line.
+--- When enabled, the preview updates live as the cursor moves.
+--- @param bufnr number
+local function toggle_preview(bufnr)
+  local state = buffer_state[bufnr]
+  if not state then return end
+
+  -- Close existing preview if any
+  if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
+    vim.api.nvim_win_close(state.preview_win, true)
+    state.preview_win = nil
+    state.preview_buf = nil
+    if state.preview_augroup then
+      vim.api.nvim_clear_autocmds({ group = state.preview_augroup })
+      state.preview_augroup = nil
+    end
+    return
+  end
+
+  -- Create empty preview buffer/window first; content will be filled by update_preview
   local preview_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(preview_buf, 0, -1, false, preview_lines)
   vim.bo[preview_buf].filetype = "pen_preview"
   vim.bo[preview_buf].modifiable = false
   vim.bo[preview_buf].buftype = "nofile"
 
-  -- Highlight the target line (relative)
-  local highlight_line = bm.line - start_line -- 0-based in buffer? Wait, nvim_buf_add_highlight is 0-based
-  vim.api.nvim_buf_add_highlight(preview_buf, -1, "Search", highlight_line, 0, -1)
-
   local width = 80
-  local height = math.min(15, #preview_lines + 2)
+  local height = 12
   local row_pos = math.floor((vim.o.lines - height) / 2)
   local col_pos = math.floor((vim.o.columns - width) / 2)
 
@@ -474,24 +525,38 @@ local function toggle_preview(bufnr)
     col = col_pos,
     style = "minimal",
     border = "rounded",
-    title = "Preview: " .. vim.fn.fnamemodify(bm.file, ":t") .. ":" .. bm.line,
+    title = "Preview",
     title_pos = "center",
   })
 
   state.preview_win = preview_win
   state.preview_buf = preview_buf
 
-  -- Auto-close preview when leaving or on next action? For now, toggle handles it.
-  -- Also close on buffer leave
-  vim.api.nvim_create_autocmd("BufLeave", {
+  -- Live update on cursor move
+  state.preview_augroup = vim.api.nvim_create_augroup("PenPreview_" .. bufnr, { clear = true })
+  vim.api.nvim_create_autocmd("CursorMoved", {
+    group = state.preview_augroup,
     buffer = bufnr,
-    once = true,
+    callback = function()
+      update_preview(bufnr)
+    end,
+  })
+
+  -- Auto-close preview when leaving the pen buffer
+  vim.api.nvim_create_autocmd("BufLeave", {
+    group = state.preview_augroup,
+    buffer = bufnr,
     callback = function()
       if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
         vim.api.nvim_win_close(state.preview_win, true)
       end
+      state.preview_win = nil
+      state.preview_buf = nil
     end,
   })
+
+  -- Initial content
+  update_preview(bufnr)
 end
 
 --- Start an incremental (live) filter prompt for the bookmark list.
@@ -554,6 +619,10 @@ local function start_incremental_filter(bufnr)
 
   -- Close filter on leave or <Esc>/<CR>
   local function close_filter(clear)
+    -- Prevent re-entrancy from BufLeave
+    if state._closing_filter then return end
+    state._closing_filter = true
+
     if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
       vim.api.nvim_win_close(state.filter_win, true)
     end
@@ -567,6 +636,11 @@ local function start_incremental_filter(bufnr)
     if vim.api.nvim_buf_is_valid(bufnr) then
       vim.api.nvim_set_current_buf(bufnr)
     end
+    -- Leave insert mode so the user can immediately navigate / select
+    -- (filter was opened with startinsert!)
+    vim.cmd("stopinsert")
+
+    state._closing_filter = nil
   end
 
   vim.keymap.set("i", "<Esc>", function() close_filter(true) end, { buffer = filter_buf, silent = true })
@@ -658,6 +732,10 @@ function M.open(idx, config)
     if state and state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
       vim.api.nvim_win_close(state.preview_win, true)
     end
+    if state and state.preview_augroup then
+      vim.api.nvim_clear_autocmds({ group = state.preview_augroup })
+      state.preview_augroup = nil
+    end
     -- close filter prompt if open
     if state and state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
       vim.api.nvim_win_close(state.filter_win, true)
@@ -713,6 +791,9 @@ function M.open(idx, config)
       if state then
         if state.preview_win and vim.api.nvim_win_is_valid(state.preview_win) then
           vim.api.nvim_win_close(state.preview_win, true)
+        end
+        if state.preview_augroup then
+          vim.api.nvim_clear_autocmds({ group = state.preview_augroup })
         end
         if state.filter_win and vim.api.nvim_win_is_valid(state.filter_win) then
           vim.api.nvim_win_close(state.filter_win, true)

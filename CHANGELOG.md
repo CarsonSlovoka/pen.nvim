@@ -37,6 +37,8 @@
 - 在 oil.nvim buffer 加入書籤時，改為記錄游標下的真實檔案／目錄路徑（而非 `oil://` buffer 本身）
 - 支援跳轉到 `oil://` 等特殊路徑（不再被 filereadable 檢查擋住）
 - `display.columns` 如果其計算結果為 `nil` 那麼此欄位將不顯示（用於 `field = "source"`、`field = "index"`，以及 `format` 回傳 `nil`）
+- `/` 篩選按下 `<CR>` 確認後會自動離開 insert 模式，無需再按一次 `<Esc>`
+- 預覽視窗（`p`）開啟後會隨著游標移動即時更新內容
 
 ### Fixed
 
