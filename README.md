@@ -19,6 +19,8 @@
 
 支援 Neovim 0.12 以上，使用 `packadd` 或手動放入 packpath 即可，不依賴任何第三方插件管理器
 
+> [!NOTE] 也可以直接參考此[實際範例](https://github.com/CarsonSlovoka/nvim/blob/33c6e7fd86744302866676eba0375bda760179d5/plugin/pen.nvim.lua#L1-L72)
+
 ```lua
 vim.cmd.packadd("pen.nvim")
 require("pen").setup({
